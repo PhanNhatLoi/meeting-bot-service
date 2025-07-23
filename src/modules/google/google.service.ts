@@ -253,7 +253,7 @@ export class GoogleService {
         }
       }
       //typing name
-      await page.type('input[type="text"]', 'Zens bot', {
+      await page.type('input[type="text"]', 'AI meeting Bot', {
         delay: 100,
       });
 
@@ -275,7 +275,7 @@ export class GoogleService {
       });
 
       await page.$eval(
-        'button[jsname="A5il2e"][aria-label="People"]',
+        'button[jsname="A5il2e"][data-promo-anchor-id="GEUYHe"]',
         async (button) => {
           button.scrollIntoView();
           button.click();
@@ -480,6 +480,39 @@ export class GoogleService {
       } else {
         console.error('People container not found');
       }
+
+      const targetSelector = 'div.VfPpkd-P5QLlc[role="dialog"]';
+      const targetSelectorModal = 'div.VfPpkd-IE5DDf[jsname="GGAcbc"]';
+
+      const hidePopupIfExists = () => {
+        const popup = document.querySelector(targetSelector);
+        const popupModal = document.querySelector(targetSelectorModal);
+        if (popup) (popup as HTMLElement).style.display = 'none';
+        if (popupModal) (popupModal as HTMLElement).style.display = 'none';
+      };
+
+      hidePopupIfExists();
+
+      const observerPopup = new MutationObserver((mutationsList) => {
+        for (const mutation of mutationsList) {
+          for (const node of mutation.addedNodes) {
+            if (node.nodeType === Node.ELEMENT_NODE) {
+              const element = node as HTMLElement;
+              if (
+                element.matches?.(targetSelector) ||
+                element.matches?.(targetSelectorModal)
+              ) {
+                element.style.display = 'none';
+              }
+            }
+          }
+        }
+      });
+
+      observerPopup.observe(document.body, {
+        childList: true,
+        subtree: true,
+      });
     });
   }
 }

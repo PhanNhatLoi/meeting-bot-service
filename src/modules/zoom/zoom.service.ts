@@ -53,7 +53,7 @@ export class ZoomService {
       await page.evaluate(() => {
         const input = document.querySelector('#input-for-name');
         if (input) {
-          input.setAttribute('value', 'Zens bot');
+          input.setAttribute('value', 'AI meeting Bot');
           input.dispatchEvent(new Event('input', { bubbles: true }));
           input.dispatchEvent(new Event('change', { bubbles: true }));
         }

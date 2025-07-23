@@ -27,10 +27,8 @@ import { IIdentityService } from 'src/shared/services/identity.service.interface
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { WordAnalysisService } from '@modules/word-analysis/word-analysis.service';
-import { ERRORS_DICTIONARY } from 'src/shared/constants/error-dictionary.constaint';
 import { v1 as speech } from '@google-cloud/speech';
 import { Translation } from '@database/entities/translation.entity';
-import { GoogleGenerativeAI } from '@google/generative-ai';
 import { ISegment } from './interfaces/segment';
 import { google } from '@google-cloud/speech/build/protos/protos';
 import { PassThrough } from 'stream';
@@ -59,23 +57,26 @@ export class AiService {
           AI: new OpenAI({ apiKey: process.env.OPENAI_API_KEY }),
           model: 'gpt-4o',
         };
-      case SUMMARY_CORE.ALIBABA:
-        return {
-          AI: new OpenAI({
-            apiKey: process.env.ALIBABA_DASHSCOPE_API_KEY,
-            baseURL: 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
-          }),
-          model: 'qwen-plus',
-        };
-      case SUMMARY_CORE.GEMINI:
-        return {
-          AI: new GoogleGenerativeAI(
-            process.env.GEMINI_API_KEY,
-          ).getGenerativeModel({ model: 'gemini-1.5-flash' }),
-          model: 'gemini-1.5-flash',
-        };
+      // case SUMMARY_CORE.ALIBABA:
+      //   return {
+      //     AI: new OpenAI({
+      //       apiKey: process.env.ALIBABA_DASHSCOPE_API_KEY,
+      //       baseURL: 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
+      //     }),
+      //     model: 'qwen-plus',
+      //   };
+      // case SUMMARY_CORE.GEMINI:
+      //   return {
+      //     AI: new GoogleGenerativeAI(
+      //       process.env.GEMINI_API_KEY,
+      //     ).getGenerativeModel({ model: 'gemini-1.5-flash' }),
+      //     model: 'gemini-1.5-flash',
+      //   };
       default:
-        throw new Error('Unsupported AI model');
+        return {
+          AI: new OpenAI({ apiKey: process.env.OPENAI_API_KEY }),
+          model: 'gpt-4o',
+        };
     }
   }
   async convertWebmToMp3(inputPath: string): Promise<string> {
@@ -341,13 +342,13 @@ export class AiService {
         _id: new mongoose.Types.ObjectId(meetingId),
       })) as any
     ).toJSON();
-    const checkIsActive = await this.checkCharacter(summaryCore);
-    if (!checkIsActive) {
-      throw new BadRequestException({
-        message: ERRORS_DICTIONARY.AVAILABLE_LIMIT,
-        details: 'Limit character error',
-      });
-    }
+    // const checkIsActive = await this.checkCharacter(summaryCore);
+    // if (!checkIsActive) {
+    //   throw new BadRequestException({
+    //     message: ERRORS_DICTIONARY.AVAILABLE_LIMIT,
+    //     details: 'Limit character error',
+    //   });
+    // }
 
     if (meeting.translationAI.length === 0) {
       // todo using queue
@@ -482,13 +483,13 @@ export class AiService {
     message: string,
   ): Promise<Result<string>> {
     try {
-      const checkIsActive = await this.checkCharacter(core);
-      if (!checkIsActive) {
-        throw new BadRequestException({
-          message: ERRORS_DICTIONARY.AVAILABLE_LIMIT,
-          details: 'Limit character error',
-        });
-      }
+      // const checkIsActive = await this.checkCharacter(core);
+      // if (!checkIsActive) {
+      //   throw new BadRequestException({
+      //     message: ERRORS_DICTIONARY.AVAILABLE_LIMIT,
+      //     details: 'Limit character error',
+      //   });
+      // }
 
       const meeting = (
         (await this._meetingService.getMeeting({
@@ -499,104 +500,46 @@ export class AiService {
       let response;
       let result;
       const ai_model = this.aiModel(core);
-      switch (core) {
-        case SUMMARY_CORE.ALIBABA:
-        case SUMMARY_CORE.GPT:
-          let messages: {
-            role: 'assistant' | 'system' | 'user';
-            content: string;
-          }[] = [];
-          messages = meeting.chatWithAIAssistant || [];
-          messages.push({ role: 'user', content: message });
+      let messages: {
+        role: 'assistant' | 'system' | 'user';
+        content: string;
+      }[] = [];
+      messages = meeting.chatWithAIAssistant || [];
+      messages.push({ role: 'user', content: message });
 
-          response = await ai_model.AI.chat.completions.create({
-            model: ai_model.model,
-            messages: [
-              {
-                role: 'system',
-                content:
-                  'You are a helpful assistant. Answer questions based on previous conversations, answers will be in the same language as the question I asked',
-              },
-              {
-                role: 'user',
-                content:
-                  meeting?.translationAI
-                    ?.map((trans) => trans.transcript)
-                    .join('. ') || '',
-              },
-              ...messages,
-            ],
-            max_tokens: 1000,
-          });
+      response = await ai_model.AI.chat.completions.create({
+        model: ai_model.model,
+        messages: [
+          {
+            role: 'system',
+            content:
+              'You are a helpful assistant. Answer questions based on previous conversations, answers will be in the same language as the question I asked',
+          },
+          {
+            role: 'user',
+            content:
+              meeting?.translationAI
+                ?.map((trans) => trans.transcript)
+                .join('. ') || '',
+          },
+          ...messages,
+        ],
+        max_tokens: 1000,
+      });
 
-          result = response.choices[0].message.content;
+      result = response.choices[0].message.content;
 
-          messages.push({ role: 'assistant', content: result });
+      messages.push({ role: 'assistant', content: result });
 
-          await this._meetingService.updateMeeting(
-            { _id: new mongoose.Types.ObjectId(meetingId) },
-            { chatWithAIAssistant: JSON.stringify(messages) },
-          );
-
-          break;
-
-        case SUMMARY_CORE.GEMINI:
-          let messages_gemini: {
-            role: 'user' | 'model';
-            parts?: Object[];
-            content?: string;
-          }[] = [];
-          messages_gemini = meeting.chatWithAIAssistant || [];
-
-          let chat = await ai_model.AI.startChat({
-            history: [
-              ...(meeting.chatWithAIAssistant || []).map((chat) => {
-                return {
-                  role: chat.role === 'user' ? 'user' : 'model',
-                  parts: [{ text: chat?.content }],
-                };
-              }),
-              {
-                role: 'user',
-                parts: [
-                  {
-                    text:
-                      meeting?.translationAI
-                        ?.map((trans) => trans.transcript)
-                        .join('. ') || '',
-                  },
-                ],
-              },
-            ],
-          });
-
-          response = await chat.sendMessage(message);
-          result = response.response.text();
-          messages_gemini.push({ role: 'user', content: message });
-
-          messages_gemini.push({ role: 'model', content: result });
-
-          await this._meetingService.updateMeeting(
-            { _id: new mongoose.Types.ObjectId(meetingId) },
-            { chatWithAIAssistant: JSON.stringify(messages_gemini) },
-          );
-          break;
-      }
+      await this._meetingService.updateMeeting(
+        { _id: new mongoose.Types.ObjectId(meetingId) },
+        { chatWithAIAssistant: JSON.stringify(messages) },
+      );
 
       const res = await this._wordAnalysisService.getWordAnalysis({
         user: this._identityService._id,
         core,
       });
-
-      if (res) {
-        await this._wordAnalysisService.update(
-          { _id: res._id },
-          {
-            characterCountDay: res.characterCountDay + result.length || 0,
-            characterCountMonth: res.characterCountMonth + result.length || 0,
-          },
-        );
-      }
 
       return Results.success(result || '');
     } catch (error) {

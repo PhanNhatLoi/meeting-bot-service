@@ -7,5 +7,4 @@ export class CreateUserAccountDto {
   name: string;
   // createdBy?: string;
   emailVerified?: boolean;
-  // domain?: DOMAIN_URL;
 }

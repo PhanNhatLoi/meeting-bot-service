@@ -7,7 +7,6 @@ import {
   WebSocketServer,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
-import { EventsService } from './events.service';
 import {
   JOINING_STATUS,
   SUMMARY_CORE,
@@ -23,7 +22,7 @@ export class EventsGateway
 {
   @WebSocketServer()
   server: Server;
-  constructor(private readonly _eventService: EventsService) {}
+  constructor() {}
 
   afterInit(server: Server) {}
 

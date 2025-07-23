@@ -15,13 +15,18 @@ import {
 import { SwaggerConfig } from 'src/configs/config.interface';
 import { ValidationPipeOptions } from 'src/base/pipes/validation.pipe';
 import * as bodyParser from 'body-parser';
+process.env.GOOGLE_APPLICATION_CREDENTIALS =
+  'analog-ship-466808-s1-0f67163a0bc9.json';
 
 async function bootstrap() {
   const logger = new Logger(bootstrap.name);
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
   app.enableCors();
 
-  app.use('/api/v1/payment/webhook', bodyParser.raw({ type: 'application/json' }));
+  app.use(
+    '/api/v1/payment/webhook',
+    bodyParser.raw({ type: 'application/json' }),
+  );
 
   const configService = app.get<ConfigService>(ConfigService);
   const environment = configService.getOrThrow<string>('environment');

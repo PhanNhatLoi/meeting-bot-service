@@ -21,7 +21,6 @@ import { InjectQueue } from '@nestjs/bullmq';
 import { NAME_QUEUE } from 'src/shared/bull.config';
 import { Queue } from 'bullmq';
 import { EventsGateway } from '@modules/gateways/events.gateway';
-process.env.GOOGLE_APPLICATION_CREDENTIALS = 'test-12-a8809-7c320de1b94b.json';
 
 @Injectable()
 export class BotService {

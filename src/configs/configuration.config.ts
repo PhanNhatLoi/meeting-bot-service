@@ -15,9 +15,7 @@ export const GLOBAL_CONFIG = () => ({
     dbName: process.env.DATABASE_NAME,
   },
   emailAccount: {
-    username: process.env.GOOGLE_EMAIL_USER,
-    password: process.env.GOOGLE_EMAIL_PASSWORD,
-    fakeName: process.env.USER_NAME || 'Zens bot',
+    fakeName: process.env.USER_NAME || 'AI meeting Bot',
   },
   google: {
     clientId: process.env.GOOGLE_CLIENT_ID,
@@ -86,7 +84,6 @@ export const GLOBAL_CONFIG = () => ({
   },
   url: {
     aiApiUrl: process.env.AI_API_URL,
-    domainUrl: process.env.DOMAIN_URL,
   },
 });
 
