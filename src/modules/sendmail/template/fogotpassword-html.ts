@@ -16,7 +16,7 @@ export const ForgotTemplate = (otp: string) => {
             </div>
             <p>If you did not request to change your email, you can ignore this email and your email address will remain unchanged.</p>
             <p>Thank you,</p>
-            <p>Zen-s Team</p>
+            <p>MeetLyzer</p>
         </div>
     </body>
     </html>`;

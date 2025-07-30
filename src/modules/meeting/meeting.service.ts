@@ -82,6 +82,14 @@ export class MeetingService {
       user: this._identityService._id,
     } as FilterQuery<Meeting>;
 
+    if (rest.keyword) {
+      conditions.$or = [
+        { organizer: { $regex: rest.keyword, $options: 'i' } },
+        { meetingCode: { $regex: rest.keyword, $options: 'i' } },
+        { title: { $regex: rest.keyword, $options: 'i' } },
+      ];
+    }
+
     const result = await this._meetingRepository.getPagination(conditions, {
       limit,
       page,

@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -173,7 +174,7 @@ export class AuthService {
         });
       }
       if (!user.emailVerified) {
-        throw new BadRequestException({
+        throw new ForbiddenException({
           message: ERRORS_DICTIONARY.DATA_NOT_ACTIVE,
           details: 'Email not activated!!',
         });
@@ -215,7 +216,7 @@ export class AuthService {
       const user = await this._userAccountService.get({ email: payload.email });
       if (type === 'resetPassword') {
         if (!user.emailVerified) {
-          throw new BadRequestException({
+          throw new ForbiddenException({
             message: ERRORS_DICTIONARY.DATA_NOT_ACTIVE,
             details: 'User not active!!',
           });

@@ -8,7 +8,6 @@ import {
 import { randomUUID } from 'crypto';
 import { google } from 'googleapis';
 import { HttpService } from '@nestjs/axios';
-import { AxiosResponse } from 'axios';
 import { firstValueFrom } from 'rxjs';
 import { ConfigService } from '@nestjs/config';
 import {
@@ -176,20 +175,46 @@ export class GoogleService {
     return res;
   }
 
-  async exchangeCode(code: string) {
-    const url = 'https://zoom.us/oauth/token';
-    const response: AxiosResponse<any> = await firstValueFrom(
-      this.httpService.post(url, null, {
-        params: {
-          grant_type: 'authorization_code',
-          code,
-          redirect_uri: this.redirectUri,
-        },
-        auth: { username: this.clientId, password: this.clientSecret },
+  async exchangeCodeForToken(code: string) {
+    try {
+      const data = new URLSearchParams({
+        client_id: this.clientId,
+        client_secret: this.clientSecret,
+        code,
+        redirect_uri: 'http://localhost:8911/api/v1/google/redirect',
+        grant_type: 'authorization_code',
+      });
+
+      const response = await firstValueFrom(
+        this.httpService.post(
+          'https://oauth2.googleapis.com/token',
+          data.toString(),
+          {
+            headers: {
+              'Content-Type': 'application/x-www-form-urlencoded',
+            },
+          },
+        ),
+      );
+      console.log('response', response);
+
+      return response.data;
+    } catch (error) {
+      console.log('error', error);
+    }
+  }
+
+  async convertUrlGoogleAuth(
+    redirect_uri: string,
+    backend_redirect_uri: string,
+  ): Promise<string> {
+    const customState = encodeURIComponent(
+      JSON.stringify({
+        redirect_uri,
       }),
     );
-
-    return response.data; // access_token và refresh_token
+    const googleAuthUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${this.clientId}&redirect_uri=${backend_redirect_uri}&scope=email profile&response_type=code&state=${customState}`;
+    return googleAuthUrl;
   }
 
   async verifyGoogleAccessToken(accessToken: string) {

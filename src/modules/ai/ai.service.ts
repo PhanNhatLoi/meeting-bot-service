@@ -114,6 +114,7 @@ export class AiService {
       if (stats.size <= this.maxFileSize) {
         // File nhỏ hơn 25MB, xử lý trực tiếp
         const transcription = await this.transcribeAudio(audioFilePath);
+
         this.cleanupFile(audioFilePath);
         await this.updateAndSentEvent(meetingIdObject, {
           transcripts: transcription?.map((segment) => {
@@ -143,6 +144,9 @@ export class AiService {
             { summary: result, summaryCore: summary },
           );
         }
+
+        // Convert webm to mp4 if needed
+        await this.convertWebmToMp4IfNeeded(meeting, meeting.recordUri);
         return;
       }
 
@@ -196,6 +200,9 @@ export class AiService {
           { summary: result, summaryCore: summary },
         );
       }
+
+      // Convert webm to mp4 if needed
+      await this.convertWebmToMp4IfNeeded(meeting, meeting.recordUri);
       return;
     } catch (error) {
       if (audioFilePath) {
@@ -280,6 +287,7 @@ export class AiService {
   ): Promise<string> {
     // todo choose summary core after
     try {
+      console.log(language);
       const convertText = texts
         .map((text) => {
           return text.transcript;
@@ -367,17 +375,17 @@ export class AiService {
         language,
       );
 
-      const res = await this._wordAnalysisService.getWordAnalysis({
-        user: this._identityService._id,
-        core: summaryCore,
-      });
-      await this._wordAnalysisService.update(
-        { _id: res._id },
-        {
-          characterCountDay: res.characterCountDay + result.length,
-          characterCountMonth: res.characterCountMonth + result.length,
-        },
-      );
+      // const res = await this._wordAnalysisService.getWordAnalysis({
+      //   user: this._identityService._id,
+      //   core: summaryCore,
+      // });
+      // await this._wordAnalysisService.update(
+      //   { _id: res._id },
+      //   {
+      //     characterCountDay: res.characterCountDay + result.length,
+      //     characterCountMonth: res.characterCountMonth + result.length,
+      //   },
+      // );
 
       await this._meetingService.updateMeeting(
         { _id: new mongoose.Types.ObjectId(meetingId) },
@@ -763,5 +771,87 @@ export class AiService {
         timeoutId = null;
       }
     };
+  }
+
+  /**
+   * Convert webm file to mp4 if the original file is webm format
+   */
+  private async convertWebmToMp4IfNeeded(
+    meeting: Meeting,
+    originalFilePath: string,
+  ): Promise<void> {
+    try {
+      // Check if file is webm format
+      if (!originalFilePath.toLowerCase().endsWith('.webm')) {
+        console.log(
+          `File is not webm format, skipping conversion: ${originalFilePath}`,
+        );
+        return;
+      }
+
+      const originalFile = path.join(process.cwd(), 'files', originalFilePath);
+
+      // Check if original file exists
+      if (!fs.existsSync(originalFile)) {
+        console.warn(`Original file not found: ${originalFile}`);
+        return;
+      }
+
+      // Create mp4 filename
+      const mp4FileName = originalFilePath.replace('.webm', '.mp4');
+      const mp4FilePath = path.join(process.cwd(), 'files', mp4FileName);
+
+      console.log(
+        `Converting webm to mp4: ${originalFilePath} -> ${mp4FileName}`,
+      );
+
+      // Convert using ffmpeg
+      await new Promise<void>((resolve, reject) => {
+        ffmpeg(originalFile)
+          .output(mp4FilePath)
+          .videoCodec('libx264')
+          .audioCodec('aac')
+          .outputOptions([
+            '-preset',
+            'fast',
+            '-crf',
+            '23',
+            '-movflags',
+            '+faststart',
+          ])
+          .on('end', () => {
+            console.log(`✅ Conversion completed: ${mp4FileName}`);
+
+            // Update meeting record with mp4 file
+            this._meetingService
+              .updateMeeting({ _id: meeting._id }, { recordUri: mp4FileName })
+              .then(() => {
+                console.log(
+                  `✅ Database updated with mp4 file: ${mp4FileName}`,
+                );
+
+                // Clean up original webm file
+                this.cleanupFile(originalFile);
+                console.log(
+                  `✅ Original webm file cleaned up: ${originalFilePath}`,
+                );
+
+                resolve();
+              })
+              .catch((error) => {
+                console.error('Failed to update database:', error);
+                reject(error);
+              });
+          })
+          .on('error', (err) => {
+            console.error('FFmpeg conversion error:', err);
+            reject(err);
+          })
+          .run();
+      });
+    } catch (error) {
+      console.error('Failed to convert webm to mp4:', error);
+      // Don't throw error to avoid breaking the main flow
+    }
   }
 }

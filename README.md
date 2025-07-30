@@ -22,93 +22,113 @@
   <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
   [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
 
-# 🤖 Bot Meeting BE
+# Meeting Bot Service
 
-A powerful backend service that automates joining online meetings, records video and chat content, transcribes multilingual speech to text using Google Cloud Speech-to-Text, and summarizes or answers questions about the meeting using OpenAI GPT.
+## Ngrok Integration
 
-<p align="center">
-  <img src="https://res.cloudinary.com/dkwth9uyw/image/upload/v1749136184/Screenshot_2025-06-05_at_22.07.55_mlvvbh.png" width="100%" alt="swagger docs" /></a>
-</p>
+This project includes integrated ngrok support for exposing your local development server to the internet.
 
----
+### Setup
 
-## 🚀 Tech Stack
+1. **Install ngrok** (if not already installed):
 
-- **NestJS** – Scalable Node.js framework
-- **MongoDB** – NoSQL database for storing meeting data
-- **Puppeteer** – Headless browser automation for joining & recording meetings
-- **Google Cloud Speech-to-Text** – Transcribes multilingual audio
-- **OpenAI GPT** – Summarizes and answers questions about meeting content
-- **BullMQ / Job Queue** – Manages meeting and transcription tasks with queue to prevent overload
+   ```bash
+   npm install ngrok
+   ```
 
----
+2. **Configure environment variables**:
+   Copy the configuration from `ngrok-config.example` to your `.env` file:
 
-## 🎯 Main Features
+   ```bash
+   # Enable/disable ngrok tunnel
+   NGROK_ENABLED=true
 
-- Auto-join to online meetings via **Google Meet**, **Zoom**, and **Microsoft Teams**
-- **Record** video and **capture** chat messages during the meeting
-- Convert meeting video to **multilingual text transcripts** via Google Cloud
-- Use **OpenAI GPT** to:
-  - Summarize key meeting points
-  - Act as a virtual assistant for Q&A on the meeting content
-- Store all data including video, transcript, summary, Q&A in **MongoDB**
-- Use **job queue** to schedule and manage bots efficiently, avoiding overload
+   # Your ngrok auth token (get from https://dashboard.ngrok.com/get-started/your-authtoken)
+   NGROK_AUTH_TOKEN=your_ngrok_auth_token_here
 
----
+   # Ngrok region (us, eu, au, ap, sa, jp, in)
+   NGROK_REGION=us
 
-## 📦 Installation
+   # Protocol (http, https, tcp)
+   NGROK_PROTO=http
+   ```
 
-1. **Clone the repository**
+3. **Get your ngrok auth token**:
+   - Sign up at [ngrok.com](https://ngrok.com)
+   - Go to [dashboard.ngrok.com/get-started/your-authtoken](https://dashboard.ngrok.com/get-started/your-authtoken)
+   - Copy your auth token and add it to `.env`
 
-```bash
-git clone https://github.com/PhanNhatLoi/meeting-bot-be.git
-cd bot-meeting-be
-```
-Install dependencies
-```bash
+### Usage
 
-npm install
-# or
-yarn install
-```
-Set up environment variables
+#### Automatic Tunnel Creation
 
-Create a .env file in the root directory based on .env.example. Example:
+When you start the application, ngrok will automatically create a tunnel if `NGROK_ENABLED=true`:
 
-```env
-PORT=8911
-ENVIRONMENT=develop
-JWT_ACCESS_TOKEN_EXPIRATION_TIME= 1d
-JWT_REFRESH_TOKEN_EXPIRATION_TIME= 3d
-DATABASE_URI=
-DATABASE_NAME=
-GOOGLE_CLIENT_ID=
-GOOGLE_CLIENT_SECRET=
-GOOGLE_REDIRECT_URI= <your_api_link>/api/v1/google/register-calendar
-USER_NAME="auto bot"
-SMTP_HOST=
-SMTP_PORT=
-SMTP_USER=
-SMTP_SENDER=
-SMTP_PASSWORD=
-OPENAI_API_KEY=
-ALIBABA_DASHSCOPE_API_KEY=
-
-STRIPE_SECRET_KEY=
-STRIPE_ENDPOINT_SECRET_KEY=
-GEMINI_API_KEY=
-DOCKER_PORT=
-DOCKER_HOST="localhost"
-DISPLAY = ":99"
-
-```
-▶️ Running the App
 ```bash
 npm run start:dev
-# or
-yarn start:dev
 ```
-## Demo link: https://mtgrec.api.int.zebra-ai.net/swagger
-Auth swagger docs:
-username: admin
-password: admin@1230
+
+You'll see output like:
+
+```
+✅ Ngrok tunnel started successfully!
+🌐 Public URL: https://abc123.ngrok.io
+🔗 Local URL: http://localhost:3000
+```
+
+#### Manual Control via API
+
+You can also control the ngrok tunnel via REST API:
+
+- **Get tunnel status**: `GET /api/v1/ngrok/status`
+- **Start tunnel**: `POST /api/v1/ngrok/start`
+- **Stop tunnel**: `DELETE /api/v1/ngrok/stop`
+
+#### Testing
+
+Test ngrok connection:
+
+```bash
+node scripts/test-ngrok.js
+```
+
+### Features
+
+- ✅ Automatic tunnel creation on app startup
+- ✅ Configurable via environment variables
+- ✅ REST API for manual control
+- ✅ Automatic cleanup on app shutdown
+- ✅ Beautiful console logging with emojis
+- ✅ Swagger documentation for API endpoints
+
+### Configuration Options
+
+| Variable           | Description           | Default |
+| ------------------ | --------------------- | ------- |
+| `NGROK_ENABLED`    | Enable/disable ngrok  | `false` |
+| `NGROK_AUTH_TOKEN` | Your ngrok auth token | -       |
+| `NGROK_REGION`     | Ngrok region          | `us`    |
+| `NGROK_PROTO`      | Protocol              | `http`  |
+
+### Troubleshooting
+
+1. **"Failed to start ngrok tunnel"**:
+
+   - Check if your auth token is correct
+   - Ensure you have an active ngrok account
+   - Verify your internet connection
+
+2. **"Tunnel already exists"**:
+
+   - The service will automatically handle existing tunnels
+   - Use the API to stop and restart if needed
+
+3. **Port conflicts**:
+   - Ensure your app port is not already in use
+   - Check if another ngrok instance is running
+
+### Security Notes
+
+- Never commit your ngrok auth token to version control
+- Use environment variables for sensitive configuration
+- Consider using ngrok's domain restrictions for production use

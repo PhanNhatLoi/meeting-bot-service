@@ -15,6 +15,7 @@ import {
 import { SwaggerConfig } from 'src/configs/config.interface';
 import { ValidationPipeOptions } from 'src/base/pipes/validation.pipe';
 import * as bodyParser from 'body-parser';
+
 process.env.GOOGLE_APPLICATION_CREDENTIALS =
   'analog-ship-466808-s1-0f67163a0bc9.json';
 
@@ -68,8 +69,10 @@ async function bootstrap() {
 
   app.setBaseViewsDir(join(__dirname, '..', 'src/modules/zoom/views'));
   app.setViewEngine('hbs');
-  await app.listen(config_service.get('PORT'), () =>
-    logger.log(`Application running on port ${config_service.get('PORT')}`),
+
+  const port = config_service.get('PORT');
+  await app.listen(port, () =>
+    logger.log(`Application running on port ${port}`),
   );
 }
 bootstrap();

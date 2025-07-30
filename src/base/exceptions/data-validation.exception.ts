@@ -5,6 +5,6 @@ export class DataValidationException extends BadRequestException {
     objectOrError?: string | object | any,
     descriptionOrOptions?: string | HttpExceptionOptions,
   ) {
-    super(objectOrError ?? '検証エラー', descriptionOrOptions);
+    super(objectOrError ?? 'VALIDATION_ERROR', descriptionOrOptions);
   }
 }

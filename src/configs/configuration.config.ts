@@ -18,8 +18,8 @@ export const GLOBAL_CONFIG = () => ({
     fakeName: process.env.USER_NAME || 'AI meeting Bot',
   },
   google: {
-    clientId: process.env.GOOGLE_CLIENT_ID,
-    clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+    clientId: process.env.SMTP_CLIENT_ID,
+    clientSecret: process.env.SMTP_CLIENT_SECRET,
     redirectUri: process.env.GOOGLE_REDIRECT_URI,
   },
   zoom: {

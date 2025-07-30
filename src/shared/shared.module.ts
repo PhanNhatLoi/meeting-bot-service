@@ -24,7 +24,7 @@ export class SharedModule {
       WordAnalysisService,
     ];
 
-    const exports = Object.assign([], providers);
+    const exports = [...providers];
 
     return {
       global: options?.isGlobal || true,

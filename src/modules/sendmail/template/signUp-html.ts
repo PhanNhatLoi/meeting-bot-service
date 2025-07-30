@@ -15,7 +15,7 @@ export const SignUpTemplate = (otp: string) => {
              <h3 style="color: red; background-color: #f4f4f4; padding: 10px; border-radius: 5px;">${otp}</h3>
             </div>
             <p>Thank you,</p>
-            <p>Zen-s team</p>
+            <p>MeetLyzer</p>
         </div>
     </body>
     </html>`;
