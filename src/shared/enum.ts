@@ -36,6 +36,7 @@ export enum PAYMENT_STATUS {
 export enum TRANSLATE_STATUS {
   NEW = 'NEW',
   PROCESSING = 'PROCESSING',
+  SUMMARY = 'SUMMARY',
   DONE = 'DONE',
   FAILED = 'FAILED',
 }

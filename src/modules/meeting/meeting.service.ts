@@ -129,10 +129,7 @@ export class MeetingService {
     );
   }
 
-  async importMeeting(
-    file: Express.Multer.File,
-    language: string,
-  ): Promise<Result<Meeting>> {
+  async importMeeting(file: Express.Multer.File): Promise<Result<Meeting>> {
     try {
       const filePath = await this._fileService.uploadFile(file);
       const meeting = await this.create({
@@ -144,11 +141,8 @@ export class MeetingService {
         joiningStatus: JOINING_STATUS.IMPORT,
       });
       // todo using queue
-      const summary = SUMMARY_CORE.ALIBABA;
       await this.speechToTextQueue.add('speech-to-text', {
         meetingId: meeting.id,
-        summary,
-        language,
       });
       // todo using queue
 

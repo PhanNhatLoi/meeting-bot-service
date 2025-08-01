@@ -92,7 +92,11 @@ export class EventsGateway
       this.server.emit(`${meetingId}_summary`, data);
       this.server
         .to(`${prefixChanel}${userId}`)
-        .emit('summary_status', { meetingId, ...data });
+        .emit('summary_status', {
+          meetingId,
+          ...data,
+          translateStatus: TRANSLATE_STATUS.DONE,
+        });
     } catch (error) {
       console.log(error);
     }

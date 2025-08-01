@@ -124,32 +124,47 @@ export class AiService {
         const newMp4FilePath = await this.convertWebmToMp4IfNeeded(
           meeting.recordUri,
         );
+        const transcripts = transcription?.map?.((segment) => {
+          return {
+            meeting: meeting._id as any,
+            speaker: 'SPEAKER_01',
+            start: segment.start * 1000,
+            end: segment.end * 1000,
+            time: '',
+            newWords: false,
+            transcript: segment.text,
+          };
+        });
         await this.updateAndSentEvent(meetingIdObject, {
-          transcripts: transcription?.map?.((segment) => {
-            return {
-              meeting: meeting._id as any,
-              speaker: 'SPEAKER_01',
-              start: segment.start * 1000,
-              end: segment.end * 1000,
-              time: '',
-              newWords: false,
-              transcript: segment.text,
-            };
-          }),
-          status: TRANSLATE_STATUS.DONE,
-          recordUri: newMp4FilePath,
+          transcripts,
+          status: getSummaryText
+            ? TRANSLATE_STATUS.SUMMARY
+            : TRANSLATE_STATUS.DONE,
+          recordUri: newMp4FilePath || meeting.recordUri,
         });
         if (getSummaryText) {
-          const result = await this.summarizeText([], summary, language);
+          const result = await this.summarizeText(
+            transcripts,
+            summary,
+            language,
+          );
           this._eventGateway.handlePingSummary(
             this._identityService.id,
             meeting.id.toString(),
-            { summaryCore: summary, summary: result },
+            {
+              summaryCore: summary,
+              summary: result,
+              recordUri: newMp4FilePath || meeting.recordUri,
+            },
           );
 
           await this._meetingService.updateMeeting(
             { _id: meeting._id },
-            { summary: result, summaryCore: summary },
+            {
+              summary: result,
+              summaryCore: summary,
+              translateStatus: TRANSLATE_STATUS.DONE,
+            },
           );
         }
         return;
@@ -194,22 +209,36 @@ export class AiService {
       );
       await this.updateAndSentEvent(meetingIdObject, {
         transcripts: transcriptions,
-        status: TRANSLATE_STATUS.DONE,
-        recordUri: newMp4FilePath,
+        status: getSummaryText
+          ? TRANSLATE_STATUS.SUMMARY
+          : TRANSLATE_STATUS.DONE,
+        recordUri: newMp4FilePath || meeting.recordUri,
       });
 
       if (getSummaryText) {
-        const result = await this.summarizeText([], summary, language);
+        const result = await this.summarizeText(
+          transcriptions,
+          summary,
+          language,
+        );
 
         this._eventGateway.handlePingSummary(
           this._identityService.id,
           meeting.id.toString(),
-          { summaryCore: summary, summary: result },
+          {
+            summaryCore: summary,
+            summary: result,
+            recordUri: newMp4FilePath || meeting.recordUri,
+          },
         );
 
         await this._meetingService.updateMeeting(
           { _id: meeting._id },
-          { summaryCore: summary, summary: result },
+          {
+            summaryCore: summary,
+            summary: result,
+            translateStatus: TRANSLATE_STATUS.DONE,
+          },
         );
       }
       return;
@@ -310,46 +339,25 @@ export class AiService {
         })
         .join('. ');
       const ai_model = this.aiModel(summaryCore);
-      const promt = `Please analyze the following conversation (there may be one or more different speakers, I will separate the sentences with "."), and rewrite the overall summary by ${language} with a limit of 200 words . The dialogue I provide is: ${convertText}`;
+      const promt = `Please analyze the following conversation (there may be one or more different speakers, I will separate the sentences with "."), and rewrite the overall summary by ${LANGUAGE_CODE[language]} with a limit of 200 words . The dialogue I provide is: ${convertText}`;
 
-      let completion;
-      let summary;
-      switch (summaryCore) {
-        case SUMMARY_CORE.ALIBABA:
-        case SUMMARY_CORE.GPT:
-          completion = await ai_model.AI.chat.completions.create({
-            model: ai_model.model,
-            messages: [
-              {
-                role: 'system',
-                content:
-                  'You are a professional assistant summarizing meeting content, or conversing with high accuracy with input in many different languages. The abstract should not exceed 200 words.',
-              },
-              { role: 'user', content: promt },
-            ],
-          });
-          // Extract the summarized response
-          summary = completion.choices[0]?.message?.content;
-          break;
-        case SUMMARY_CORE.GEMINI:
-          completion = await ai_model.AI.generateContent([
-            {
-              text: `Please summary the following conversation (there may be one or more different speakers, I will separate the sentences with "."), rewrite and return just the overall summary by ${language} language with a limit of 200 words. The dialogue I provide is: ${convertText}`,
-            },
-          ]);
+      const completion = await ai_model.AI.chat.completions.create({
+        model: ai_model.model,
+        messages: [
+          {
+            role: 'system',
+            content:
+              'You are a professional assistant summarizing meeting content, or conversing with high accuracy with input in many different languages. The abstract should not exceed 200 words.',
+          },
+          { role: 'user', content: promt },
+        ],
+      });
 
-          summary = completion.response.text();
-          break;
-
-        default:
-          throw new Error('Invalid summaryCore value');
-      }
-
-      if (!summary) {
+      if (!completion.choices[0]?.message?.content) {
         throw new Error('No response received from OpenAI');
       }
 
-      return summary;
+      return completion.choices[0]?.message?.content;
     } catch (error) {
       console.error('Error while summarizing text:', error);
       throw new InternalServerErrorException('Failed to summarize text');
@@ -366,13 +374,6 @@ export class AiService {
         _id: new mongoose.Types.ObjectId(meetingId),
       })) as any
     ).toJSON();
-    // const checkIsActive = await this.checkCharacter(summaryCore);
-    // if (!checkIsActive) {
-    //   throw new BadRequestException({
-    //     message: ERRORS_DICTIONARY.AVAILABLE_LIMIT,
-    //     details: 'Limit character error',
-    //   });
-    // }
 
     if (meeting.translationAI.length === 0) {
       // todo using queue
@@ -383,25 +384,13 @@ export class AiService {
         getSummaryText: true,
       });
       // todo using queue
-      return Results.success({ status: TRANSLATE_STATUS.PROCESSING, data: '' });
+      return Results.success({ status: TRANSLATE_STATUS.SUMMARY, data: '' });
     } else {
       const result = await this.summarizeText(
         meeting.translationAI,
         summaryCore,
         language,
       );
-
-      // const res = await this._wordAnalysisService.getWordAnalysis({
-      //   user: this._identityService._id,
-      //   core: summaryCore,
-      // });
-      // await this._wordAnalysisService.update(
-      //   { _id: res._id },
-      //   {
-      //     characterCountDay: res.characterCountDay + result.length,
-      //     characterCountMonth: res.characterCountMonth + result.length,
-      //   },
-      // );
 
       await this._meetingService.updateMeeting(
         { _id: new mongoose.Types.ObjectId(meetingId) },
@@ -801,7 +790,7 @@ export class AiService {
         console.log(
           `File is not webm format, skipping conversion: ${originalFilePath}`,
         );
-        return;
+        return undefined;
       }
 
       const originalFile = path.join(process.cwd(), 'files', originalFilePath);
@@ -809,7 +798,7 @@ export class AiService {
       // Check if original file exists
       if (!fs.existsSync(originalFile)) {
         console.warn(`Original file not found: ${originalFile}`);
-        return;
+        return undefined;
       }
 
       const mp4FileName = originalFilePath.replace('.webm', '.mp4');
