@@ -56,8 +56,8 @@ export class MeetingService {
       [
         {
           path: 'translationAI',
-          // select: ['isActive', 'startDate', 'endDate', 'deletedAt', 'user'],
           match: { deletedAt: null },
+          options: { sort: { _id: 1 } },
         },
       ],
     );
@@ -116,7 +116,6 @@ export class MeetingService {
         new mongoose.Types.ObjectId(meet.id),
         payload.transcripts,
       );
-      payload.translateStatus = TRANSLATE_STATUS.DONE;
       delete payload.transcripts;
     }
     return Results.success(

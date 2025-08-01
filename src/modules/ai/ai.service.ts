@@ -34,6 +34,7 @@ import { google } from '@google-cloud/speech/build/protos/protos';
 import { PassThrough } from 'stream';
 import internal, { Writable } from 'stream';
 import { NAME_QUEUE } from 'src/shared/bull.config';
+const testFlag = false;
 
 @Injectable()
 export class AiService {
@@ -113,11 +114,18 @@ export class AiService {
       const stats = fs.statSync(audioFilePath);
       if (stats.size <= this.maxFileSize) {
         // File nhỏ hơn 25MB, xử lý trực tiếp
-        const transcription = await this.transcribeAudio(audioFilePath);
+        const transcription = testFlag
+          ? []
+          : await this.transcribeAudio(audioFilePath);
 
         this.cleanupFile(audioFilePath);
+
+        // Convert webm to mp4 if needed
+        const newMp4FilePath = await this.convertWebmToMp4IfNeeded(
+          meeting.recordUri,
+        );
         await this.updateAndSentEvent(meetingIdObject, {
-          transcripts: transcription?.map((segment) => {
+          transcripts: transcription?.map?.((segment) => {
             return {
               meeting: meeting._id as any,
               speaker: 'SPEAKER_01',
@@ -129,10 +137,10 @@ export class AiService {
             };
           }),
           status: TRANSLATE_STATUS.DONE,
+          recordUri: newMp4FilePath,
         });
         if (getSummaryText) {
           const result = await this.summarizeText([], summary, language);
-
           this._eventGateway.handlePingSummary(
             this._identityService.id,
             meeting.id.toString(),
@@ -144,9 +152,6 @@ export class AiService {
             { summary: result, summaryCore: summary },
           );
         }
-
-        // Convert webm to mp4 if needed
-        await this.convertWebmToMp4IfNeeded(meeting, meeting.recordUri);
         return;
       }
 
@@ -162,8 +167,10 @@ export class AiService {
       const transcriptions = [];
       for (const index in chunks) {
         const chunkPath = path.join(tempDir, chunks[index]);
-        const transcription = await this.transcribeAudio(chunkPath);
-        transcription?.map((segment) => {
+        const transcription = testFlag
+          ? []
+          : await this.transcribeAudio(chunkPath);
+        transcription?.map?.((segment) => {
           transcriptions.push({
             meeting: meeting._id as any,
             speaker: 'SPEAKER_01',
@@ -181,9 +188,14 @@ export class AiService {
       fs.rmdirSync(tempDir);
       this.cleanupFile(audioFilePath);
 
+      // Convert webm to mp4 if needed
+      const newMp4FilePath = await this.convertWebmToMp4IfNeeded(
+        meeting.recordUri,
+      );
       await this.updateAndSentEvent(meetingIdObject, {
         transcripts: transcriptions,
         status: TRANSLATE_STATUS.DONE,
+        recordUri: newMp4FilePath,
       });
 
       if (getSummaryText) {
@@ -197,12 +209,9 @@ export class AiService {
 
         await this._meetingService.updateMeeting(
           { _id: meeting._id },
-          { summary: result, summaryCore: summary },
+          { summaryCore: summary, summary: result },
         );
       }
-
-      // Convert webm to mp4 if needed
-      await this.convertWebmToMp4IfNeeded(meeting, meeting.recordUri);
       return;
     } catch (error) {
       if (audioFilePath) {
@@ -266,7 +275,11 @@ export class AiService {
 
   async updateAndSentEvent(
     meetingId: mongoose.Types.ObjectId,
-    data: { status: TRANSLATE_STATUS; transcripts: Translation[] },
+    data: {
+      status: TRANSLATE_STATUS;
+      transcripts?: Translation[];
+      recordUri?: string;
+    },
   ) {
     this._eventGateway.handlePingTranslation(
       this._identityService.id,
@@ -275,7 +288,11 @@ export class AiService {
     );
     await this._meetingService.updateMeeting(
       { _id: meetingId },
-      { translateStatus: data.status, transcripts: data.transcripts },
+      {
+        translateStatus: data.status,
+        transcripts: data.transcripts,
+        recordUri: data.recordUri,
+      },
     );
   }
 
@@ -287,7 +304,6 @@ export class AiService {
   ): Promise<string> {
     // todo choose summary core after
     try {
-      console.log(language);
       const convertText = texts
         .map((text) => {
           return text.transcript;
@@ -544,10 +560,10 @@ export class AiService {
         { chatWithAIAssistant: JSON.stringify(messages) },
       );
 
-      const res = await this._wordAnalysisService.getWordAnalysis({
-        user: this._identityService._id,
-        core,
-      });
+      // const res = await this._wordAnalysisService.getWordAnalysis({
+      //   user: this._identityService._id,
+      //   core,
+      // });
 
       return Results.success(result || '');
     } catch (error) {
@@ -777,9 +793,8 @@ export class AiService {
    * Convert webm file to mp4 if the original file is webm format
    */
   private async convertWebmToMp4IfNeeded(
-    meeting: Meeting,
     originalFilePath: string,
-  ): Promise<void> {
+  ): Promise<string> {
     try {
       // Check if file is webm format
       if (!originalFilePath.toLowerCase().endsWith('.webm')) {
@@ -797,16 +812,10 @@ export class AiService {
         return;
       }
 
-      // Create mp4 filename
       const mp4FileName = originalFilePath.replace('.webm', '.mp4');
       const mp4FilePath = path.join(process.cwd(), 'files', mp4FileName);
 
-      console.log(
-        `Converting webm to mp4: ${originalFilePath} -> ${mp4FileName}`,
-      );
-
-      // Convert using ffmpeg
-      await new Promise<void>((resolve, reject) => {
+      return await new Promise<string>((resolve, reject) => {
         ffmpeg(originalFile)
           .output(mp4FilePath)
           .videoCodec('libx264')
@@ -820,28 +829,8 @@ export class AiService {
             '+faststart',
           ])
           .on('end', () => {
-            console.log(`✅ Conversion completed: ${mp4FileName}`);
-
-            // Update meeting record with mp4 file
-            this._meetingService
-              .updateMeeting({ _id: meeting._id }, { recordUri: mp4FileName })
-              .then(() => {
-                console.log(
-                  `✅ Database updated with mp4 file: ${mp4FileName}`,
-                );
-
-                // Clean up original webm file
-                this.cleanupFile(originalFile);
-                console.log(
-                  `✅ Original webm file cleaned up: ${originalFilePath}`,
-                );
-
-                resolve();
-              })
-              .catch((error) => {
-                console.error('Failed to update database:', error);
-                reject(error);
-              });
+            this.cleanupFile(originalFile);
+            resolve(mp4FileName);
           })
           .on('error', (err) => {
             console.error('FFmpeg conversion error:', err);

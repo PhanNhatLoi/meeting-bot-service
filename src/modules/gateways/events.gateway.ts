@@ -71,7 +71,7 @@ export class EventsGateway
   async handlePingTranslation(
     userId: string,
     meetingId: string,
-    data: { status: TRANSLATE_STATUS; transcripts: Translation[] },
+    data: { status: TRANSLATE_STATUS; transcripts?: Translation[] },
   ) {
     try {
       this.server.emit(`${meetingId}_translation`, data);
@@ -86,7 +86,7 @@ export class EventsGateway
   async handlePingSummary(
     userId: string,
     meetingId: string,
-    data: { summaryCore: SUMMARY_CORE; summary: string },
+    data: { summaryCore: SUMMARY_CORE; summary: string; recordUri?: string },
   ) {
     try {
       this.server.emit(`${meetingId}_summary`, data);
