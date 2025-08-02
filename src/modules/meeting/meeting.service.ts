@@ -200,4 +200,12 @@ export class MeetingService {
       throw error;
     }
   }
+  async getLive(): Promise<Result<Meeting[]>> {
+    const meetings = await this._meetingRepository.findAll({
+      user: this._identityService._id,
+      deletedAt: null,
+      recording: true,
+    });
+    return Results.success(meetings.data);
+  }
 }

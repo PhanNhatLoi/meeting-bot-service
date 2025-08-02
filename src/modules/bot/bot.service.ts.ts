@@ -5,7 +5,12 @@ import * as fs from 'fs';
 import internal from 'stream';
 import { Results } from 'src/base/response/result-builder';
 import { GoogleService } from '@modules/google/google.service';
-import { JOINING_STATUS, LANGUAGE_CODE, PLATFORM } from 'src/shared/enum';
+import {
+  JOINING_STATUS,
+  LANGUAGE_CODE,
+  PLATFORM,
+  TRANSLATE_STATUS,
+} from 'src/shared/enum';
 import { MeetingService } from '@modules/meeting/meeting.service';
 import { Result } from 'src/base/response/result';
 import { Meeting } from 'src/database/entities/meeting.entity';
@@ -49,6 +54,8 @@ export class BotService {
     private readonly _eventGateway: EventsGateway,
     @InjectQueue(NAME_QUEUE.AUTO_JOIN_QUEUE)
     private readonly _autoJoinQueue: Queue,
+    @InjectQueue(NAME_QUEUE.CONVERT_FILE)
+    private readonly _convertFileQueue: Queue,
   ) {}
 
   async autoJoin(
@@ -331,6 +338,7 @@ export class BotService {
           });
         }
       }
+      console.log('handleStopBot');
       return Results.success(true);
     } catch (error) {
       console.log(error);
@@ -368,10 +376,18 @@ export class BotService {
           recording: true,
         });
         if (meeting) {
+          // Update meeting immediately without waiting for conversion
           await this._meetingService.updateMeeting(
             { _id: new mongoose.Types.ObjectId(meetingData.id) },
-            meetingData.payload,
+            {
+              ...meetingData.payload,
+              translateStatus: TRANSLATE_STATUS.PROCESSING,
+            },
           );
+          await this._convertFileQueue.add(NAME_QUEUE.CONVERT_FILE, {
+            meetingId: meetingData.id,
+            recordUri: meeting.recordUri,
+          });
         }
       }
     } catch (error) {

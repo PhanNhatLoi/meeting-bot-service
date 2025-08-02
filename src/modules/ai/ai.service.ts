@@ -781,7 +781,7 @@ export class AiService {
   /**
    * Convert webm file to mp4 if the original file is webm format
    */
-  private async convertWebmToMp4IfNeeded(
+  public async convertWebmToMp4IfNeeded(
     originalFilePath: string,
   ): Promise<string> {
     try {

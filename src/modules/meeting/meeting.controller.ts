@@ -35,6 +35,11 @@ export class MeetingController {
     return await this._meetingService.getPagination(pageOptionsDto);
   }
 
+  @Get('live')
+  async handleGetAllLive() {
+    return await this._meetingService.getLive();
+  }
+
   @Get('info/:meetingId')
   async handleGetInfo(@Param('meetingId') meetingId) {
     return await this._meetingService.handleGetInfo(meetingId);

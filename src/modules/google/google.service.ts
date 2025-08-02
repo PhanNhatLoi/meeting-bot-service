@@ -357,6 +357,7 @@ export class GoogleService {
       await new Promise((resolve) => setTimeout(resolve, 500));
       return meetingHostData;
     } catch (error) {
+      this.eventGateway.handleJoiningMeeting(meetingId, JOINING_STATUS.FAILED);
       throw new BadRequestException(error);
     }
   }

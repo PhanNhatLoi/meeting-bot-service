@@ -9,6 +9,7 @@ import { AgendaService } from './agenda.service';
 import { MeetingModule } from '@modules/meeting/meeting.module';
 import { GoogleModule } from '@modules/google/google.module';
 import { ConfigModule } from '@nestjs/config';
+import { ConvertFileProcessor } from './convert-file.processor';
 
 @Module({
   imports: [
@@ -22,13 +23,19 @@ import { ConfigModule } from '@nestjs/config';
     BullModule.registerQueue(
       { name: NAME_QUEUE.SPEECH_TO_TEXT },
       { name: NAME_QUEUE.AUTO_JOIN_QUEUE },
+      { name: NAME_QUEUE.CONVERT_FILE },
     ),
     AiModule,
     forwardRef(() => MeetingModule),
     forwardRef(() => GoogleModule),
     forwardRef(() => BotModule),
   ],
-  providers: [SpeechToTextProcessor, AutoJoinProcessor, AgendaService],
+  providers: [
+    SpeechToTextProcessor,
+    AutoJoinProcessor,
+    ConvertFileProcessor,
+    AgendaService,
+  ],
   exports: [BullModule, AgendaService],
 })
 export class QueueModule {}
