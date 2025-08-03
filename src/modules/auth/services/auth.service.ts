@@ -362,7 +362,7 @@ export class AuthService {
         const newUser = await this._userAccountService.create({
           email: user.email,
           name: user.name,
-          emailVerified: user.email_verified,
+          emailVerified: true,
           avatar: user.picture,
           password: this.generateString(8),
         });

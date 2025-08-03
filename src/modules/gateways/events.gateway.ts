@@ -90,13 +90,11 @@ export class EventsGateway
   ) {
     try {
       this.server.emit(`${meetingId}_summary`, data);
-      this.server
-        .to(`${prefixChanel}${userId}`)
-        .emit('summary_status', {
-          meetingId,
-          ...data,
-          translateStatus: TRANSLATE_STATUS.DONE,
-        });
+      this.server.to(`${prefixChanel}${userId}`).emit('summary_status', {
+        meetingId,
+        ...data,
+        translateStatus: TRANSLATE_STATUS.DONE,
+      });
     } catch (error) {
       console.log(error);
     }
@@ -138,6 +136,14 @@ export class EventsGateway
         joiningStatus,
         organizer,
       });
+    } catch (error) {
+      console.log(error);
+    }
+  }
+
+  async handlePingGoogleCalendar(userId: string) {
+    try {
+      this.server.to(`${prefixChanel}${userId}`).emit('google_calendar');
     } catch (error) {
       console.log(error);
     }
