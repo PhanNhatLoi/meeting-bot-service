@@ -1,23 +1,19 @@
 import {
   IsEmail,
   IsNotEmpty,
+  IsString,
   Length,
   MaxLength,
   MinLength,
 } from 'class-validator';
 export class ChangePasswordDto {
   @IsNotEmpty()
-  @IsEmail()
-  @MaxLength(50)
-  email: string;
-
-  @IsNotEmpty()
   @MinLength(8)
   newPassword: string;
 
   @IsNotEmpty()
-  @Length(6)
-  accessKey: string;
+  @MinLength(8)
+  oldPassword: string;
 }
 
 export class verifyChangePasswordDto {
@@ -27,6 +23,26 @@ export class verifyChangePasswordDto {
   email: string;
 
   @IsNotEmpty()
-  @Length(5)
-  otpCode: string;
+  @Length(6)
+  @IsString()
+  accessKey: string;
+
+  @IsNotEmpty()
+  @MinLength(8)
+  newPassword: string;
+}
+
+export class ForgotPasswordDto {
+  @IsNotEmpty()
+  @IsEmail()
+  @MaxLength(50)
+  email: string;
+
+  @IsNotEmpty()
+  @IsString()
+  redirectUri: string;
+
+  @IsNotEmpty()
+  @IsString()
+  backendUri: string;
 }

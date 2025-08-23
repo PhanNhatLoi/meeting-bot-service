@@ -20,6 +20,7 @@ import { SendmailService } from 'src/modules/sendmail/sendmail.service';
 import { VerifyEmailDto } from '@modules/auth/dto/verify-email.dto';
 import {
   ChangePasswordDto,
+  ForgotPasswordDto,
   verifyChangePasswordDto,
 } from '@modules/auth/dto/change-password.dto';
 import * as bcrypt from 'bcrypt';
@@ -208,20 +209,8 @@ export class AuthService {
     );
   }
 
-  async sendOtp(
-    payload: SendOtpDto,
-    type: 'register' | 'resetPassword',
-  ): Promise<Result<{ otpTime: number }>> {
+  async sendOtp(payload: SendOtpDto): Promise<Result<{ otpTime: number }>> {
     try {
-      const user = await this._userAccountService.get({ email: payload.email });
-      if (type === 'resetPassword') {
-        if (!user.emailVerified) {
-          throw new ForbiddenException({
-            message: ERRORS_DICTIONARY.DATA_NOT_ACTIVE,
-            details: 'User not active!!',
-          });
-        }
-      }
       const currentOtp = await this._otpCodeService.findOtp({
         email: payload.email,
       });
@@ -235,12 +224,10 @@ export class AuthService {
         });
       }
       const otpCode = await this._otpCodeService.generateOtp();
-      const htmlTemplate =
-        type === 'register' ? SignUpTemplate(otpCode) : ForgotTemplate(otpCode);
       await this._sendMailService.sendmail({
         sendTo: payload.email,
         subject: '<noreply> This is email verify Email Otp',
-        content: htmlTemplate,
+        content: SignUpTemplate(otpCode),
       });
       const newCode = await this._otpCodeService.create(payload.email, otpCode);
       return Results.success(
@@ -254,7 +241,7 @@ export class AuthService {
 
   async changePassword(payload: ChangePasswordDto): Promise<Result<{}>> {
     const userAccount = await this._userAccountService.get({
-      email: payload.email,
+      email: this._identityService.email,
     });
 
     if (!userAccount) {
@@ -263,10 +250,14 @@ export class AuthService {
         details: 'User not found!!',
       });
     }
-    if (userAccount.accessKey !== payload.accessKey) {
+    const isMatch = await bcrypt.compare(
+      payload.oldPassword,
+      userAccount.password,
+    );
+    if (!isMatch) {
       throw new BadRequestException({
-        message: ERRORS_DICTIONARY.NOT_FOUND,
-        details: 'accessKey Wrong!!',
+        message: ERRORS_DICTIONARY.WRONG_CREDENTIALS,
+        details: 'old password Wrong!!',
       });
     }
 
@@ -275,7 +266,7 @@ export class AuthService {
     );
 
     await this._userAccountService.update(
-      { email: payload.email },
+      { email: this._identityService.email },
       { password: newPasswordHash, accessKey: '' },
     );
 
@@ -284,15 +275,33 @@ export class AuthService {
 
   async verifyChangePassword(
     payload: verifyChangePasswordDto,
-  ): Promise<Result<{ accessKey: string }>> {
+  ): Promise<Result<string>> {
     try {
-      await this._otpCodeService.verifyOtp(payload);
-      const accessKey = this.generateString(6);
+      const userAccount = await this._userAccountService.get({
+        email: payload.email,
+      });
+
+      if (!userAccount) {
+        throw new BadRequestException({
+          message: ERRORS_DICTIONARY.NOT_FOUND,
+          details: 'User not found!!',
+        });
+      }
+      if (userAccount.accessKey !== payload.accessKey) {
+        throw new BadRequestException({
+          message: ERRORS_DICTIONARY.VALIDATION_ERROR,
+          details: 'accessKey wrong!!',
+        });
+      }
+
+      const newPasswordHash = await this._userAccountService.hashPassword(
+        payload.newPassword,
+      );
       await this._userAccountService.update(
         { email: payload.email },
-        { accessKey: accessKey },
+        { accessKey: '', password: newPasswordHash },
       );
-      return Results.success({ accessKey: accessKey });
+      return Results.success('Password change success');
     } catch (error) {
       throw error;
     }
@@ -368,6 +377,38 @@ export class AuthService {
         });
         return await this.signIn(newUser.id);
       } else throw error;
+    }
+  }
+  async forgotPassword(payload: ForgotPasswordDto): Promise<Result<string>> {
+    try {
+      const userAccount = await this._userAccountService.get({
+        email: payload.email,
+      });
+
+      if (!userAccount) {
+        throw new BadRequestException({
+          message: ERRORS_DICTIONARY.NOT_FOUND,
+          details: 'User not found!!',
+        });
+      }
+
+      const accessKey = this.generateString(6);
+      await this._userAccountService.update(
+        { email: payload.email },
+        { accessKey: accessKey },
+      );
+      const uri = `${payload.backendUri}/redirect?redirectUri=${payload.redirectUri}&email=${payload.email}&accessKey=${accessKey}`;
+      await this._sendMailService.sendmail({
+        sendTo: payload.email,
+        subject: '<noreply> This is email reset Password',
+        content: ForgotTemplate(uri),
+      });
+
+      return Results.success(
+        'An email has been sent to your email, please check',
+      );
+    } catch (error) {
+      throw error;
     }
   }
 }
