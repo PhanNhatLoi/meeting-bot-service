@@ -18,6 +18,8 @@ import { ConvertFileProcessor } from './convert-file.processor';
       connection: {
         host: process.env.DOCKER_HOST,
         port: Number(process.env.DOCKER_PORT),
+        username: process.env.DOCKER_USERNAME,
+        password: process.env.DOCKER_PASSWORD,
       },
     }),
     BullModule.registerQueue(
