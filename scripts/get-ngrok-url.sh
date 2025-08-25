@@ -5,5 +5,5 @@ NGROK_URL=$(curl -s http://localhost:4040/api/tunnels | grep -o '"public_url":"[
 if [ -n "$NGROK_URL" ]; then
     echo "🌐 Ngrok URL: $NGROK_URL"
 else
-    echo "⚠️  Could not get ngrok URL"
+    echo "⚠️  Could not get start ngrok URL. Check /tmp/ngrok.log"
 fi 
