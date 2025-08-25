@@ -11,6 +11,7 @@
     "start": "nest start",
     "start:dev": "nest start --watch",
     "start:dev:ngrok": "concurrently \"ngrok http 8911\" \"./scripts/get-ngrok-url.sh\" \"npm run start:dev\"",
+    "start:prod:ngrok": "concurrently \"ngrok http 8911\" \"./scripts/get-ngrok-url.sh\" \"npm run start\"",
     "url": "./scripts/get-url.sh",
     "start:debug": "nest start --debug --watch",
     "start:prod": "node dist/main",
