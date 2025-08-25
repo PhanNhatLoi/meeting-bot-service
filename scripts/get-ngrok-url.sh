@@ -6,4 +6,4 @@ if [ -n "$NGROK_URL" ]; then
     echo "🌐 Ngrok URL: $NGROK_URL"
 else
     echo "⚠️  Could not get start ngrok URL. Check /tmp/ngrok.log"
-fi 
+fi
