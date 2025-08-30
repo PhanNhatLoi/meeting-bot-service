@@ -251,14 +251,14 @@ export class BotService {
       this.arrayClientValue[keyword].timeStartRecord = Date.now();
 
       this._aiService.speechToTextRealtime({
-        timeStartRecord: this.arrayClientValue[keyword].timeStartRecord,
+        timeStartRecord: this.arrayClientValue[keyword]?.timeStartRecord,
         languageCode,
-        listUsers: this.arrayClientValue[keyword].listUsers,
+        listUsers: this.arrayClientValue[keyword]?.listUsers,
         meeting,
         setTranscript: (val: Translation) => {
-          this.arrayClientValue[keyword].transcripts.push(val);
+          this.arrayClientValue?.[keyword]?.transcripts?.push(val);
         },
-        stream: this.arrayClientValue[keyword].stream,
+        stream: this.arrayClientValue[keyword]?.stream,
       });
 
       const result = await this._meetingService.updateMeeting(
