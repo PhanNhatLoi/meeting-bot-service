@@ -17,7 +17,7 @@ import { ValidationPipeOptions } from 'src/base/pipes/validation.pipe';
 import * as bodyParser from 'body-parser';
 
 process.env.GOOGLE_APPLICATION_CREDENTIALS =
-  'analog-ship-466808-s1-0f67163a0bc9.json';
+  'metlyzeer-acb9bb9805b7.json';
 
 async function bootstrap() {
   const logger = new Logger(bootstrap.name);
