@@ -695,16 +695,22 @@ export class GoogleService {
       const targetSelectorModal = 'div[jsname="GGAcbc"]';
 
       const hidePopupIfExists = () => {
-        const popup = document.querySelector(targetSelector);
-        const popupModal = document.querySelector(targetSelectorModal);
-        if (popup) (popup as HTMLElement).style.display = 'none';
-        if (popupModal) (popupModal as HTMLElement).style.display = 'none';
+        document.querySelectorAll(targetSelector).forEach((node) => {
+          (node as HTMLElement).style.display = 'none';
+        });
+        document.querySelectorAll(targetSelectorModal).forEach((node) => {
+          (node as HTMLElement).style.display = 'none';
+        });
       };
 
       hidePopupIfExists();
 
       const observerPopup = new MutationObserver((mutationsList) => {
         for (const mutation of mutationsList) {
+          if (mutation.type === 'attributes') {
+            hidePopupIfExists();
+            continue;
+          }
           for (const node of mutation.addedNodes) {
             if (node.nodeType === Node.ELEMENT_NODE) {
               const element = node as HTMLElement;
@@ -722,6 +728,8 @@ export class GoogleService {
       observerPopup.observe(document.body, {
         childList: true,
         subtree: true,
+        attributes: true,
+        attributeFilter: ['style', 'class', 'aria-hidden'],
       });
     });
   }
