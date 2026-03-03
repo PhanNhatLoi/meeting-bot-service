@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Param, Post } from '@nestjs/common';
-import { BotService } from './bot.service.ts';
+import { BotService } from './bot.service';
 import { JoinMeetDto } from './dto/join.dto';
 import { ApiTags } from '@nestjs/swagger';
 import { LANGUAGE_CODE } from 'src/shared/enum';
