@@ -44,7 +44,7 @@ export class MsTeamService {
 
       await page.type(
         'input[data-tid="prejoin-display-name-input"]',
-        'Zens bot',
+        'AI meeting Bot',
         { delay: 100 },
       );
 
@@ -118,7 +118,7 @@ export class MsTeamService {
               } else {
                 if (
                   guestNameSpan?.textContent &&
-                  !['Zens bot', 'Unknown User'].includes(
+                  !['AI meeting Bot', 'Unknown User'].includes(
                     guestNameSpan?.textContent?.trim(),
                   )
                 ) {
@@ -138,6 +138,7 @@ export class MsTeamService {
 
       return { organizer: null };
     } catch (error) {
+      this.eventGateway.handleJoiningMeeting(meetingId, JOINING_STATUS.FAILED);
       throw new BadRequestException(error);
     }
   }
@@ -231,7 +232,7 @@ export class MsTeamService {
             } else {
               if (
                 guestNameSpan?.textContent &&
-                !['Zens bot', 'Unknown User'].includes(
+                !['AI meeting Bot', 'Unknown User'].includes(
                   guestNameSpan.textContent.trim(),
                 )
               ) {

@@ -16,12 +16,18 @@ import { SwaggerConfig } from 'src/configs/config.interface';
 import { ValidationPipeOptions } from 'src/base/pipes/validation.pipe';
 import * as bodyParser from 'body-parser';
 
+process.env.GOOGLE_APPLICATION_CREDENTIALS =
+  'metlyzeer-acb9bb9805b7.json';
+
 async function bootstrap() {
   const logger = new Logger(bootstrap.name);
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
   app.enableCors();
 
-  app.use('/api/v1/payment/webhook', bodyParser.raw({ type: 'application/json' }));
+  app.use(
+    '/api/v1/payment/webhook',
+    bodyParser.raw({ type: 'application/json' }),
+  );
 
   const configService = app.get<ConfigService>(ConfigService);
   const environment = configService.getOrThrow<string>('environment');
@@ -63,8 +69,10 @@ async function bootstrap() {
 
   app.setBaseViewsDir(join(__dirname, '..', 'src/modules/zoom/views'));
   app.setViewEngine('hbs');
-  await app.listen(config_service.get('PORT'), () =>
-    logger.log(`Application running on port ${config_service.get('PORT')}`),
+
+  const port = config_service.get('PORT');
+  await app.listen(port, () =>
+    logger.log(`Application running on port ${port}`),
   );
 }
 bootstrap();

@@ -7,7 +7,6 @@ import {
   WebSocketServer,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
-import { EventsService } from './events.service';
 import {
   JOINING_STATUS,
   SUMMARY_CORE,
@@ -23,7 +22,7 @@ export class EventsGateway
 {
   @WebSocketServer()
   server: Server;
-  constructor(private readonly _eventService: EventsService) {}
+  constructor() {}
 
   afterInit(server: Server) {}
 
@@ -72,7 +71,7 @@ export class EventsGateway
   async handlePingTranslation(
     userId: string,
     meetingId: string,
-    data: { status: TRANSLATE_STATUS; transcripts: Translation[] },
+    data: { status: TRANSLATE_STATUS; transcripts?: Translation[] },
   ) {
     try {
       this.server.emit(`${meetingId}_translation`, data);
@@ -87,13 +86,15 @@ export class EventsGateway
   async handlePingSummary(
     userId: string,
     meetingId: string,
-    data: { summaryCore: SUMMARY_CORE; summary: string },
+    data: { summaryCore: SUMMARY_CORE; summary: string; recordUri?: string },
   ) {
     try {
       this.server.emit(`${meetingId}_summary`, data);
-      this.server
-        .to(`${prefixChanel}${userId}`)
-        .emit('summary_status', { meetingId, ...data });
+      this.server.to(`${prefixChanel}${userId}`).emit('summary_status', {
+        meetingId,
+        ...data,
+        translateStatus: TRANSLATE_STATUS.DONE,
+      });
     } catch (error) {
       console.log(error);
     }
@@ -135,6 +136,14 @@ export class EventsGateway
         joiningStatus,
         organizer,
       });
+    } catch (error) {
+      console.log(error);
+    }
+  }
+
+  async handlePingGoogleCalendar(userId: string) {
+    try {
+      this.server.to(`${prefixChanel}${userId}`).emit('google_calendar');
     } catch (error) {
       console.log(error);
     }

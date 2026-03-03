@@ -1,5 +1,5 @@
 import { Meeting } from '@database/entities/meeting.entity';
-import { BotService } from '@modules/bot/bot.service.ts';
+import { BotService } from '@modules/bot/bot.service';
 import { OnWorkerEvent, Processor, WorkerHost } from '@nestjs/bullmq';
 import { Job } from 'bullmq';
 import { NAME_QUEUE } from 'src/shared/bull.config';

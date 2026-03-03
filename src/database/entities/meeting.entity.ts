@@ -23,7 +23,6 @@ export type MeetingDocument = HydratedDocument<Meeting>;
       ret.chatWithAIAssistant = JSON.parse(ret.chatWithAIAssistant || '[]');
       delete ret.__v;
       delete ret.deletedAt;
-      delete ret.createdAt;
       delete ret.createdBy;
       delete ret.updatedBy;
       delete ret.updatedAt;
@@ -90,4 +89,5 @@ MeetingSchema.virtual('translationAI', {
   ref: 'Translation',
   localField: '_id',
   foreignField: 'meeting',
+  options: { sort: { createdAt: 1 } }, // Sort by createdAt ascending
 });

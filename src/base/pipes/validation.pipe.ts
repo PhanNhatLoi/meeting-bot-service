@@ -27,7 +27,7 @@ export class ValidationPipeOptions extends ValidationPipe {
     });
     return new DataValidationException(
       Results.validation(
-        '検証エラー',
+        'VALIDATION_ERROR',
         ERRORS_DICTIONARY.VALIDATION_ERROR,
         null,
         errors,

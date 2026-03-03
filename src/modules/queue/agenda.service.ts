@@ -56,12 +56,9 @@ export class AgendaService implements OnModuleInit {
   }
 
   async scheduleMeetings(userId: string, events: MeetingCalendarDto[]) {
-    await this.agenda.cancel({ 'data.userId': userId });
-
     for (const event of events) {
       await this.agenda.schedule(
         convertToUTC(event.start.dateTime, event.start.timeZone),
-        // new Date(Date.now()).toUTCString(),
         'autoJoin',
         {
           userId,
@@ -70,6 +67,139 @@ export class AgendaService implements OnModuleInit {
       );
     }
   }
+
+  async cancelMeetings(params: {
+    userId?: string;
+    meetingCode?: string;
+    eventId?: string;
+    startDate?: Date;
+    endDate?: Date;
+  }) {
+    const query: any = {
+      name: 'autoJoin',
+    };
+
+    // Thêm điều kiện theo userId
+    if (params.userId) {
+      query['data.userId'] = params.userId;
+    }
+
+    // Thêm điều kiện theo meetingCode
+    if (params.meetingCode) {
+      query['data.meetingCode'] = params.meetingCode;
+    }
+
+    // Thêm điều kiện theo eventId
+    if (params.eventId) {
+      query['data.id'] = params.eventId;
+    }
+
+    // Thêm điều kiện theo khoảng thời gian
+    if (params.startDate || params.endDate) {
+      query.nextRunAt = {};
+      if (params.startDate) {
+        query.nextRunAt.$gte = params.startDate;
+      }
+      if (params.endDate) {
+        query.nextRunAt.$lte = params.endDate;
+      }
+    }
+
+    try {
+      // 1. Lấy danh sách agenda jobs
+      const jobs = await this.agenda.jobs(query);
+      const canceledCount = jobs.length;
+
+      if (canceledCount === 0) {
+        return {
+          success: true,
+          canceledCount: 0,
+          message: 'Không có agenda jobs nào để hủy',
+        };
+      }
+
+      // 2. Xóa agenda jobs (sẽ xóa trong MongoDB)
+      for (const job of jobs) {
+        await job.remove();
+      }
+
+      // 3. Cancel các job trong BullMQ queue
+      const queueJobs = await this._autoJoinQueue.getJobs([
+        'waiting',
+        'active',
+        'delayed',
+      ]);
+      let canceledQueueJobs = 0;
+
+      for (const queueJob of queueJobs) {
+        const jobData = queueJob.data;
+
+        // Kiểm tra điều kiện để cancel job queue
+        let shouldCancel = false;
+
+        if (params.userId && jobData.meeting?.user === params.userId) {
+          shouldCancel = true;
+        }
+
+        if (
+          params.meetingCode &&
+          jobData.meeting?.meetingCode === params.meetingCode
+        ) {
+          shouldCancel = true;
+        }
+
+        if (params.eventId && jobData.meeting?.eventId === params.eventId) {
+          shouldCancel = true;
+        }
+
+        if (shouldCancel) {
+          await queueJob.remove();
+          canceledQueueJobs++;
+        }
+      }
+
+      this.logger.log(
+        `✅ Đã hủy ${canceledCount} agenda jobs và ${canceledQueueJobs} queue jobs`,
+      );
+
+      return {
+        success: true,
+        canceledCount,
+        canceledQueueJobs,
+        message: `Đã hủy ${canceledCount} agenda jobs và ${canceledQueueJobs} queue jobs`,
+      };
+    } catch (error) {
+      this.logger.error('❌ Lỗi khi hủy agenda jobs:', error);
+      return {
+        success: false,
+        canceledCount: 0,
+        canceledQueueJobs: 0,
+        message: 'Lỗi khi hủy agenda jobs',
+        error: error.message,
+      };
+    }
+  }
+
+  // Hàm helper để hủy tất cả agenda của một user
+  async cancelAllUserMeetings(userId: string) {
+    return this.cancelMeetings({ userId });
+  }
+
+  // Hàm helper để hủy agenda theo meeting code
+  async cancelMeetingByCode(meetingCode: string) {
+    return this.cancelMeetings({ meetingCode });
+  }
+
+  // Hàm helper để hủy agenda theo event ID
+  async cancelMeetingByEventId(eventId: string) {
+    return this.cancelMeetings({ eventId });
+  }
+
+  // Hàm helper để hủy agenda trong khoảng thời gian
+  async cancelMeetingsInDateRange(startDate: Date, endDate: Date) {
+    return this.cancelMeetings({ startDate, endDate });
+  }
+
   validateMeetingLink = (text: string) => {
     const googleMeetRegex =
       /^https:\/\/meet\.google\.com\/([a-z]{3}-[a-z]{4}-[a-z]{3})(\?.+)?$/;

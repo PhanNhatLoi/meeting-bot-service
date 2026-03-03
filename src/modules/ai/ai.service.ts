@@ -27,15 +27,14 @@ import { IIdentityService } from 'src/shared/services/identity.service.interface
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { WordAnalysisService } from '@modules/word-analysis/word-analysis.service';
-import { ERRORS_DICTIONARY } from 'src/shared/constants/error-dictionary.constaint';
 import { v1 as speech } from '@google-cloud/speech';
 import { Translation } from '@database/entities/translation.entity';
-import { GoogleGenerativeAI } from '@google/generative-ai';
 import { ISegment } from './interfaces/segment';
 import { google } from '@google-cloud/speech/build/protos/protos';
 import { PassThrough } from 'stream';
 import internal, { Writable } from 'stream';
 import { NAME_QUEUE } from 'src/shared/bull.config';
+const testFlag = false;
 
 @Injectable()
 export class AiService {
@@ -59,23 +58,26 @@ export class AiService {
           AI: new OpenAI({ apiKey: process.env.OPENAI_API_KEY }),
           model: 'gpt-4o',
         };
-      case SUMMARY_CORE.ALIBABA:
-        return {
-          AI: new OpenAI({
-            apiKey: process.env.ALIBABA_DASHSCOPE_API_KEY,
-            baseURL: 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
-          }),
-          model: 'qwen-plus',
-        };
-      case SUMMARY_CORE.GEMINI:
-        return {
-          AI: new GoogleGenerativeAI(
-            process.env.GEMINI_API_KEY,
-          ).getGenerativeModel({ model: 'gemini-1.5-flash' }),
-          model: 'gemini-1.5-flash',
-        };
+      // case SUMMARY_CORE.ALIBABA:
+      //   return {
+      //     AI: new OpenAI({
+      //       apiKey: process.env.ALIBABA_DASHSCOPE_API_KEY,
+      //       baseURL: 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
+      //     }),
+      //     model: 'qwen-plus',
+      //   };
+      // case SUMMARY_CORE.GEMINI:
+      //   return {
+      //     AI: new GoogleGenerativeAI(
+      //       process.env.GEMINI_API_KEY,
+      //     ).getGenerativeModel({ model: 'gemini-1.5-flash' }),
+      //     model: 'gemini-1.5-flash',
+      //   };
       default:
-        throw new Error('Unsupported AI model');
+        return {
+          AI: new OpenAI({ apiKey: process.env.OPENAI_API_KEY }),
+          model: 'gpt-4o',
+        };
     }
   }
   async convertWebmToMp3(inputPath: string): Promise<string> {
@@ -112,34 +114,57 @@ export class AiService {
       const stats = fs.statSync(audioFilePath);
       if (stats.size <= this.maxFileSize) {
         // File nhỏ hơn 25MB, xử lý trực tiếp
-        const transcription = await this.transcribeAudio(audioFilePath);
+        const transcription = testFlag
+          ? []
+          : await this.transcribeAudio(audioFilePath);
+
         this.cleanupFile(audioFilePath);
+
+        // Convert webm to mp4 if needed
+        const newMp4FilePath = await this.convertWebmToMp4IfNeeded(
+          meeting.recordUri,
+        );
+        const transcripts = transcription?.map?.((segment) => {
+          return {
+            meeting: meeting._id as any,
+            speaker: 'SPEAKER_01',
+            start: segment.start * 1000,
+            end: segment.end * 1000,
+            time: '',
+            newWords: false,
+            transcript: segment.text,
+          };
+        });
         await this.updateAndSentEvent(meetingIdObject, {
-          transcripts: transcription?.map((segment) => {
-            return {
-              meeting: meeting._id as any,
-              speaker: 'SPEAKER_01',
-              start: segment.start * 1000,
-              end: segment.end * 1000,
-              time: '',
-              newWords: false,
-              transcript: segment.text,
-            };
-          }),
-          status: TRANSLATE_STATUS.DONE,
+          transcripts,
+          status: getSummaryText
+            ? TRANSLATE_STATUS.SUMMARY
+            : TRANSLATE_STATUS.DONE,
+          recordUri: newMp4FilePath || meeting.recordUri,
         });
         if (getSummaryText) {
-          const result = await this.summarizeText([], summary, language);
-
+          const result = await this.summarizeText(
+            transcripts,
+            summary,
+            language,
+          );
           this._eventGateway.handlePingSummary(
             this._identityService.id,
             meeting.id.toString(),
-            { summaryCore: summary, summary: result },
+            {
+              summaryCore: summary,
+              summary: result,
+              recordUri: newMp4FilePath || meeting.recordUri,
+            },
           );
 
           await this._meetingService.updateMeeting(
             { _id: meeting._id },
-            { summary: result, summaryCore: summary },
+            {
+              summary: result,
+              summaryCore: summary,
+              translateStatus: TRANSLATE_STATUS.DONE,
+            },
           );
         }
         return;
@@ -157,8 +182,10 @@ export class AiService {
       const transcriptions = [];
       for (const index in chunks) {
         const chunkPath = path.join(tempDir, chunks[index]);
-        const transcription = await this.transcribeAudio(chunkPath);
-        transcription?.map((segment) => {
+        const transcription = testFlag
+          ? []
+          : await this.transcribeAudio(chunkPath);
+        transcription?.map?.((segment) => {
           transcriptions.push({
             meeting: meeting._id as any,
             speaker: 'SPEAKER_01',
@@ -176,23 +203,42 @@ export class AiService {
       fs.rmdirSync(tempDir);
       this.cleanupFile(audioFilePath);
 
+      // Convert webm to mp4 if needed
+      const newMp4FilePath = await this.convertWebmToMp4IfNeeded(
+        meeting.recordUri,
+      );
       await this.updateAndSentEvent(meetingIdObject, {
         transcripts: transcriptions,
-        status: TRANSLATE_STATUS.DONE,
+        status: getSummaryText
+          ? TRANSLATE_STATUS.SUMMARY
+          : TRANSLATE_STATUS.DONE,
+        recordUri: newMp4FilePath || meeting.recordUri,
       });
 
       if (getSummaryText) {
-        const result = await this.summarizeText([], summary, language);
+        const result = await this.summarizeText(
+          transcriptions,
+          summary,
+          language,
+        );
 
         this._eventGateway.handlePingSummary(
           this._identityService.id,
           meeting.id.toString(),
-          { summaryCore: summary, summary: result },
+          {
+            summaryCore: summary,
+            summary: result,
+            recordUri: newMp4FilePath || meeting.recordUri,
+          },
         );
 
         await this._meetingService.updateMeeting(
           { _id: meeting._id },
-          { summary: result, summaryCore: summary },
+          {
+            summaryCore: summary,
+            summary: result,
+            translateStatus: TRANSLATE_STATUS.DONE,
+          },
         );
       }
       return;
@@ -258,7 +304,11 @@ export class AiService {
 
   async updateAndSentEvent(
     meetingId: mongoose.Types.ObjectId,
-    data: { status: TRANSLATE_STATUS; transcripts: Translation[] },
+    data: {
+      status: TRANSLATE_STATUS;
+      transcripts?: Translation[];
+      recordUri?: string;
+    },
   ) {
     this._eventGateway.handlePingTranslation(
       this._identityService.id,
@@ -267,7 +317,11 @@ export class AiService {
     );
     await this._meetingService.updateMeeting(
       { _id: meetingId },
-      { translateStatus: data.status, transcripts: data.transcripts },
+      {
+        translateStatus: data.status,
+        transcripts: data.transcripts,
+        recordUri: data.recordUri,
+      },
     );
   }
 
@@ -285,46 +339,25 @@ export class AiService {
         })
         .join('. ');
       const ai_model = this.aiModel(summaryCore);
-      const promt = `Please analyze the following conversation (there may be one or more different speakers, I will separate the sentences with "."), and rewrite the overall summary by ${language} with a limit of 200 words . The dialogue I provide is: ${convertText}`;
+      const promt = `Please analyze the following conversation (there may be one or more different speakers, I will separate the sentences with "."), and rewrite the overall summary by ${LANGUAGE_CODE[language]} with a limit of 200 words . The dialogue I provide is: ${convertText}`;
 
-      let completion;
-      let summary;
-      switch (summaryCore) {
-        case SUMMARY_CORE.ALIBABA:
-        case SUMMARY_CORE.GPT:
-          completion = await ai_model.AI.chat.completions.create({
-            model: ai_model.model,
-            messages: [
-              {
-                role: 'system',
-                content:
-                  'You are a professional assistant summarizing meeting content, or conversing with high accuracy with input in many different languages. The abstract should not exceed 200 words.',
-              },
-              { role: 'user', content: promt },
-            ],
-          });
-          // Extract the summarized response
-          summary = completion.choices[0]?.message?.content;
-          break;
-        case SUMMARY_CORE.GEMINI:
-          completion = await ai_model.AI.generateContent([
-            {
-              text: `Please summary the following conversation (there may be one or more different speakers, I will separate the sentences with "."), rewrite and return just the overall summary by ${language} language with a limit of 200 words. The dialogue I provide is: ${convertText}`,
-            },
-          ]);
+      const completion = await ai_model.AI.chat.completions.create({
+        model: ai_model.model,
+        messages: [
+          {
+            role: 'system',
+            content:
+              'You are a professional assistant summarizing meeting content, or conversing with high accuracy with input in many different languages. The abstract should not exceed 200 words.',
+          },
+          { role: 'user', content: promt },
+        ],
+      });
 
-          summary = completion.response.text();
-          break;
-
-        default:
-          throw new Error('Invalid summaryCore value');
-      }
-
-      if (!summary) {
+      if (!completion.choices[0]?.message?.content) {
         throw new Error('No response received from OpenAI');
       }
 
-      return summary;
+      return completion.choices[0]?.message?.content;
     } catch (error) {
       console.error('Error while summarizing text:', error);
       throw new InternalServerErrorException('Failed to summarize text');
@@ -341,13 +374,6 @@ export class AiService {
         _id: new mongoose.Types.ObjectId(meetingId),
       })) as any
     ).toJSON();
-    const checkIsActive = await this.checkCharacter(summaryCore);
-    if (!checkIsActive) {
-      throw new BadRequestException({
-        message: ERRORS_DICTIONARY.AVAILABLE_LIMIT,
-        details: 'Limit character error',
-      });
-    }
 
     if (meeting.translationAI.length === 0) {
       // todo using queue
@@ -358,24 +384,12 @@ export class AiService {
         getSummaryText: true,
       });
       // todo using queue
-      return Results.success({ status: TRANSLATE_STATUS.PROCESSING, data: '' });
+      return Results.success({ status: TRANSLATE_STATUS.SUMMARY, data: '' });
     } else {
       const result = await this.summarizeText(
         meeting.translationAI,
         summaryCore,
         language,
-      );
-
-      const res = await this._wordAnalysisService.getWordAnalysis({
-        user: this._identityService._id,
-        core: summaryCore,
-      });
-      await this._wordAnalysisService.update(
-        { _id: res._id },
-        {
-          characterCountDay: res.characterCountDay + result.length,
-          characterCountMonth: res.characterCountMonth + result.length,
-        },
       );
 
       await this._meetingService.updateMeeting(
@@ -482,13 +496,13 @@ export class AiService {
     message: string,
   ): Promise<Result<string>> {
     try {
-      const checkIsActive = await this.checkCharacter(core);
-      if (!checkIsActive) {
-        throw new BadRequestException({
-          message: ERRORS_DICTIONARY.AVAILABLE_LIMIT,
-          details: 'Limit character error',
-        });
-      }
+      // const checkIsActive = await this.checkCharacter(core);
+      // if (!checkIsActive) {
+      //   throw new BadRequestException({
+      //     message: ERRORS_DICTIONARY.AVAILABLE_LIMIT,
+      //     details: 'Limit character error',
+      //   });
+      // }
 
       const meeting = (
         (await this._meetingService.getMeeting({
@@ -499,104 +513,46 @@ export class AiService {
       let response;
       let result;
       const ai_model = this.aiModel(core);
-      switch (core) {
-        case SUMMARY_CORE.ALIBABA:
-        case SUMMARY_CORE.GPT:
-          let messages: {
-            role: 'assistant' | 'system' | 'user';
-            content: string;
-          }[] = [];
-          messages = meeting.chatWithAIAssistant || [];
-          messages.push({ role: 'user', content: message });
+      let messages: {
+        role: 'assistant' | 'system' | 'user';
+        content: string;
+      }[] = [];
+      messages = meeting.chatWithAIAssistant || [];
+      messages.push({ role: 'user', content: message });
 
-          response = await ai_model.AI.chat.completions.create({
-            model: ai_model.model,
-            messages: [
-              {
-                role: 'system',
-                content:
-                  'You are a helpful assistant. Answer questions based on previous conversations, answers will be in the same language as the question I asked',
-              },
-              {
-                role: 'user',
-                content:
-                  meeting?.translationAI
-                    ?.map((trans) => trans.transcript)
-                    .join('. ') || '',
-              },
-              ...messages,
-            ],
-            max_tokens: 1000,
-          });
-
-          result = response.choices[0].message.content;
-
-          messages.push({ role: 'assistant', content: result });
-
-          await this._meetingService.updateMeeting(
-            { _id: new mongoose.Types.ObjectId(meetingId) },
-            { chatWithAIAssistant: JSON.stringify(messages) },
-          );
-
-          break;
-
-        case SUMMARY_CORE.GEMINI:
-          let messages_gemini: {
-            role: 'user' | 'model';
-            parts?: Object[];
-            content?: string;
-          }[] = [];
-          messages_gemini = meeting.chatWithAIAssistant || [];
-
-          let chat = await ai_model.AI.startChat({
-            history: [
-              ...(meeting.chatWithAIAssistant || []).map((chat) => {
-                return {
-                  role: chat.role === 'user' ? 'user' : 'model',
-                  parts: [{ text: chat?.content }],
-                };
-              }),
-              {
-                role: 'user',
-                parts: [
-                  {
-                    text:
-                      meeting?.translationAI
-                        ?.map((trans) => trans.transcript)
-                        .join('. ') || '',
-                  },
-                ],
-              },
-            ],
-          });
-
-          response = await chat.sendMessage(message);
-          result = response.response.text();
-          messages_gemini.push({ role: 'user', content: message });
-
-          messages_gemini.push({ role: 'model', content: result });
-
-          await this._meetingService.updateMeeting(
-            { _id: new mongoose.Types.ObjectId(meetingId) },
-            { chatWithAIAssistant: JSON.stringify(messages_gemini) },
-          );
-          break;
-      }
-
-      const res = await this._wordAnalysisService.getWordAnalysis({
-        user: this._identityService._id,
-        core,
+      response = await ai_model.AI.chat.completions.create({
+        model: ai_model.model,
+        messages: [
+          {
+            role: 'system',
+            content:
+              'You are a helpful assistant. Answer questions based on previous conversations, answers will be in the same language as the question I asked',
+          },
+          {
+            role: 'user',
+            content:
+              meeting?.translationAI
+                ?.map((trans) => trans.transcript)
+                .join('. ') || '',
+          },
+          ...messages,
+        ],
+        max_tokens: 1000,
       });
 
-      if (res) {
-        await this._wordAnalysisService.update(
-          { _id: res._id },
-          {
-            characterCountDay: res.characterCountDay + result.length || 0,
-            characterCountMonth: res.characterCountMonth + result.length || 0,
-          },
-        );
-      }
+      result = response.choices[0].message.content;
+
+      messages.push({ role: 'assistant', content: result });
+
+      await this._meetingService.updateMeeting(
+        { _id: new mongoose.Types.ObjectId(meetingId) },
+        { chatWithAIAssistant: JSON.stringify(messages) },
+      );
+
+      // const res = await this._wordAnalysisService.getWordAnalysis({
+      //   user: this._identityService._id,
+      //   core,
+      // });
 
       return Results.success(result || '');
     } catch (error) {
@@ -820,5 +776,60 @@ export class AiService {
         timeoutId = null;
       }
     };
+  }
+
+  /**
+   * Convert webm file to mp4 if the original file is webm format
+   */
+  public async convertWebmToMp4IfNeeded(
+    originalFilePath: string,
+  ): Promise<string> {
+    try {
+      // Check if file is webm format
+      if (!originalFilePath.toLowerCase().endsWith('.webm')) {
+        console.log(
+          `File is not webm format, skipping conversion: ${originalFilePath}`,
+        );
+        return undefined;
+      }
+
+      const originalFile = path.join(process.cwd(), 'files', originalFilePath);
+
+      // Check if original file exists
+      if (!fs.existsSync(originalFile)) {
+        console.warn(`Original file not found: ${originalFile}`);
+        return undefined;
+      }
+
+      const mp4FileName = originalFilePath.replace('.webm', '.mp4');
+      const mp4FilePath = path.join(process.cwd(), 'files', mp4FileName);
+
+      return await new Promise<string>((resolve, reject) => {
+        ffmpeg(originalFile)
+          .output(mp4FilePath)
+          .videoCodec('libx264')
+          .audioCodec('aac')
+          .outputOptions([
+            '-preset',
+            'fast',
+            '-crf',
+            '23',
+            '-movflags',
+            '+faststart',
+          ])
+          .on('end', () => {
+            this.cleanupFile(originalFile);
+            resolve(mp4FileName);
+          })
+          .on('error', (err) => {
+            console.error('FFmpeg conversion error:', err);
+            reject(err);
+          })
+          .run();
+      });
+    } catch (error) {
+      console.error('Failed to convert webm to mp4:', error);
+      // Don't throw error to avoid breaking the main flow
+    }
   }
 }

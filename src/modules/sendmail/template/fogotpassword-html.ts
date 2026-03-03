@@ -1,22 +1,27 @@
-export const ForgotTemplate = (otp: string) => {
+export const ForgotTemplate = (url: string) => {
   return `<!DOCTYPE html>
     <html lang="en">
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Forget Password OTP</title>
+        <title>Forget Password</title>
     </head>
     <body>
         <div style="font-family: Arial, sans-serif; margin: 0 auto; max-width: 600px; padding: 20px;">
-            <h2 style="color: #333;">Forget Password OTP</h2>
+            <h2 style="color: #333;">Reset Your Password</h2>
             <p>Hello,</p>
-            <p>We received a request to change password your email. Please use the following OTP (One Time Password) to confirm the change:</p>
-            <div style="display: flex; justify-content: center; align-items: center">
-             <h3 style="color: red; background-color: #f4f4f4; padding: 10px; border-radius: 5px;">${otp}</h3>
+            <p>We received a request to reset the password for your account. Please click the button below to reset your password:</p>
+            <div style="text-align: center; margin: 20px 0;">
+              <a href="${url}" target="_blank" 
+                 style="background-color: #4CAF50; color: white; padding: 12px 20px; 
+                        text-decoration: none; border-radius: 5px; font-size: 16px;">
+                Reset Password
+              </a>
             </div>
-            <p>If you did not request to change your email, you can ignore this email and your email address will remain unchanged.</p>
-            <p>Thank you,</p>
-            <p>Zen-s Team</p>
+            <p>If the button does not work, you can also copy and paste the following link into your browser:</p>
+            <p style="word-break: break-all;"><a href="${url}">${url}</a></p>
+            <p>If you did not request a password reset, you can safely ignore this email.</p>
+            <p>Thank you,<br/>MeetLyzer</p>
         </div>
     </body>
     </html>`;

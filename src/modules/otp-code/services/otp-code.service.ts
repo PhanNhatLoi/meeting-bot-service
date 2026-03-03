@@ -53,7 +53,7 @@ export class OtpCodeService {
     const result = await this._otpCodeRepository.findOneByCondition(payload);
     if (!result) {
       throw new BadRequestException({
-        message: ERRORS_DICTIONARY.NOT_FOUND,
+        message: ERRORS_DICTIONARY.OTP_WRONG,
         details: 'Otp wrong!!',
       });
     }
@@ -63,7 +63,7 @@ export class OtpCodeService {
       new Date(result.expiresAt).getTime() < new Date().getTime()
     ) {
       throw new BadRequestException({
-        message: ERRORS_DICTIONARY.VALIDATION_ERROR,
+        message: ERRORS_DICTIONARY.OTP_EXP,
         details: 'Otp exp!!',
       });
     }

@@ -63,8 +63,11 @@ export class UserAccount extends BaseEntity {
   @Prop({ required: false, default: '' })
   googleRefreshToken: string;
 
-  @Prop({ required: false, default: false })
-  registerGoogleCalendar: boolean;
+  @Prop({ required: false, default: '' })
+  googleChannelId: string;
+
+  @Prop({ required: false, default: '' })
+  resourceId: string;
 }
 export const UserSchema = SchemaFactory.createForClass(UserAccount);
 

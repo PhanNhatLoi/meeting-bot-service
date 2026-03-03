@@ -35,12 +35,17 @@ export class MeetingController {
     return await this._meetingService.getPagination(pageOptionsDto);
   }
 
+  @Get('live')
+  async handleGetAllLive() {
+    return await this._meetingService.getLive();
+  }
+
   @Get('info/:meetingId')
   async handleGetInfo(@Param('meetingId') meetingId) {
     return await this._meetingService.handleGetInfo(meetingId);
   }
 
-  @Post('import/:language')
+  @Post('import')
   @UseGuards(JwtAccessTokenGuard)
   @ApiBodyWithFiles({
     limit: 1,
@@ -49,7 +54,6 @@ export class MeetingController {
   async uploadMedia(
     @UploadedFiles()
     files: Express.Multer.File[],
-    @Param('language') language,
   ) {
     if (!files || files?.length === 0) {
       throw new BadRequestException(
@@ -59,7 +63,7 @@ export class MeetingController {
         ),
       );
     }
-    return this._meetingService.importMeeting(files[0], language);
+    return this._meetingService.importMeeting(files[0]);
   }
 
   @Put(':meetingId')

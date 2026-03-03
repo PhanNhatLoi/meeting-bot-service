@@ -4,7 +4,7 @@ import { GoogleService } from '@modules/google/google.service';
 import { ZoomService } from '@modules/zoom/zoom.service';
 import { MsTeamService } from '@modules/ms-team/ms-team.service';
 import { QueueModule } from '@modules/queue/queue.module';
-import { BotService } from './bot.service.ts';
+import { BotService } from './bot.service';
 import { MeetingModule } from '@modules/meeting/meeting.module';
 import { AiModule } from '@modules/ai/ai.modules';
 import { HttpModule } from '@nestjs/axios';

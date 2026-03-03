@@ -13,7 +13,8 @@ pnpm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 lerna-debug.log*
-test-12-a8809-7c320de1b94b.json
+analog-ship-466808-s1-0f67163a0bc9.json
+metlyzeer-acb9bb9805b7.json
 
 # OS
 .DS_Store
@@ -57,3 +58,4 @@ pids
 
 # Diagnostic reports (https://nodejs.org/api/report.html)
 report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
+

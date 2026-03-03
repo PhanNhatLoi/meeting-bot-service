@@ -13,7 +13,6 @@ export type TranslationDocument = HydratedDocument<Translation>;
       ret.id = ret._id;
       delete ret.__v;
       delete ret.deletedAt;
-      delete ret.createdAt;
       delete ret.createdBy;
       delete ret.updatedBy;
       delete ret.updatedAt;

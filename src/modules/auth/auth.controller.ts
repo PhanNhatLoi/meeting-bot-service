@@ -17,6 +17,7 @@ import { JwtAccessTokenGuard } from './guards/jwt-access-token.guard';
 import { VerifyEmailDto } from '@modules/auth/dto/verify-email.dto';
 import {
   ChangePasswordDto,
+  ForgotPasswordDto,
   verifyChangePasswordDto,
 } from '@modules/auth/dto/change-password.dto';
 import { SendOtpDto } from '@modules/auth/dto/send-otp.dto';
@@ -284,9 +285,15 @@ export class AuthController {
   @Post('forget-password')
   @Public()
   @ApiBody({
-    type: SendOtpDto,
+    type: ForgotPasswordDto,
     examples: {
-      user: { value: { email: 'exampleuser@myzens.net' } as SendOtpDto },
+      user: {
+        value: {
+          email: 'exampleuser@myzens.net',
+          redirectUri: 'exp://192.168.1.10:8081',
+          backendUri: 'https://fc18846a0212.ngrok-free.app/api/v1',
+        } as ForgotPasswordDto,
+      },
     },
   })
   @ApiResponse({
@@ -309,15 +316,14 @@ export class AuthController {
       'application/json': {
         example: {
           ...Results.success(
-            { otpTime: 60 },
             'An otp email has been sent to your email, please check',
           ),
         },
       },
     },
   })
-  async forgetPassword(@Body() payload: SendOtpDto) {
-    return await this._authService.sendOtp(payload, 'resetPassword');
+  async forgetPassword(@Body() payload: ForgotPasswordDto) {
+    return await this._authService.forgotPassword(payload);
   }
   // ==========
   // forget password
@@ -362,7 +368,7 @@ export class AuthController {
     },
   })
   async resendOtp(@Body() payload: SendOtpDto) {
-    return await this._authService.sendOtp(payload, 'register');
+    return await this._authService.sendOtp(payload);
   }
   // ==========
   // resend otp
@@ -380,7 +386,8 @@ export class AuthController {
       user: {
         value: {
           email: 'exampleuser@myzens.net',
-          otpCode: '11111',
+          accessKey: 'QdEpwu',
+          newPassword: '12345678',
         } as verifyChangePasswordDto,
       },
     },
@@ -390,7 +397,7 @@ export class AuthController {
     description: 'success',
     content: {
       'application/json': {
-        example: { ...Results.success({ accessKey: 'QdEpwu' }) },
+        example: { ...Results.success('Password change success') },
       },
     },
   })
@@ -406,15 +413,13 @@ export class AuthController {
   // ==========
 
   @Post('change-password')
-  @Public()
   @ApiBody({
     type: ChangePasswordDto,
     examples: {
       user: {
         value: {
-          email: 'exampleuser@myzens.net',
           newPassword: '12345678',
-          accessKey: 'QdEpwu',
+          oldPassword: '12345678',
         } as ChangePasswordDto,
       },
     },

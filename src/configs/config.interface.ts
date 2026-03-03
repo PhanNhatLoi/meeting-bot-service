@@ -1,18 +1,17 @@
 import { SecuritySchemeObject } from '@nestjs/swagger/dist/interfaces/open-api-spec.interface';
 
-export interface Config {
+export interface AppConfig {
   environment: string;
+  ai_url: string;
+  database: DatabaseConfig;
+  emailAccount: IEmailAccount;
+  google: GuardConfigurationInfo;
+  zoom: GuardConfigurationInfo;
   nest: NestConfig;
   cors: CorsConfig;
   swagger: SwaggerConfig;
   jwtServiceConfig: JwtServiceConfig;
-  database: DatabaseConfig;
   url: UrlConfig;
-  emailAccount: IEmailAccount;
-  google: GuardConfigurationInfo;
-  zoom: GuardConfigurationInfo;
-  ai_url: string;
-  domain_url: string;
 }
 
 export interface IEmailAccount {
@@ -39,19 +38,19 @@ export interface CorsConfig {
 }
 export interface SwaggerConfig {
   enabled: boolean;
-  basicAuth: {
-    [username: string]: string;
-  };
   title: string;
   description: string;
   version: string;
   path: string;
+  basicAuth: Record<string, string>;
   auth: {
-    authOptions: SecuritySchemeObject;
+    authOptions: any;
     name: string;
   };
-  options: SwaggerOptions;
-  docOptions: SwaggerDocOptions;
+  options: any;
+  docOptions: {
+    options: any;
+  };
 }
 
 export interface SwaggerOptions {

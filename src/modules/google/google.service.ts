@@ -8,13 +8,9 @@ import {
 import { randomUUID } from 'crypto';
 import { google } from 'googleapis';
 import { HttpService } from '@nestjs/axios';
-import { AxiosResponse } from 'axios';
 import { firstValueFrom } from 'rxjs';
 import { ConfigService } from '@nestjs/config';
-import {
-  GuardConfigurationInfo,
-  UrlConfig,
-} from 'src/configs/config.interface';
+import { GuardConfigurationInfo } from 'src/configs/config.interface';
 import { Page } from 'puppeteer';
 import { EventsGateway } from '@modules/gateways/events.gateway';
 import { Meeting } from '@database/entities/meeting.entity';
@@ -23,6 +19,8 @@ import { UserAccountService } from '@modules/user-account/services/user-account.
 import * as jwt from 'jsonwebtoken';
 import { AgendaService } from '@modules/queue/agenda.service';
 import { MeetingCalendarDto } from '@modules/queue/dto/meetingCarlendar.dto';
+import { convertToUTC } from 'src/shared/constants/global.constants';
+import { Results } from 'src/base/response/result-builder';
 
 @Injectable()
 export class GoogleService {
@@ -30,9 +28,7 @@ export class GoogleService {
   private readonly calendar = google.calendar('v3');
   private clientId: string;
   private clientSecret: string;
-  private redirectUri: string;
   private readonly googleMeetBaseUrl: string = 'https://meet.google.com/';
-  private readonly domainUrl: string;
 
   constructor(
     private readonly httpService: HttpService,
@@ -45,9 +41,6 @@ export class GoogleService {
       configService.getOrThrow<GuardConfigurationInfo>('google').clientId;
     this.clientSecret =
       configService.getOrThrow<GuardConfigurationInfo>('google').clientSecret;
-    this.redirectUri =
-      configService.getOrThrow<GuardConfigurationInfo>('google').redirectUri;
-    this.domainUrl = configService.getOrThrow<UrlConfig>('url').domainUrl;
   }
 
   async watchCalendar(
@@ -55,18 +48,22 @@ export class GoogleService {
     refreshToken: string,
     calendarId: string,
     email: string,
+    domainUrl: string,
   ) {
     try {
       const user = await this._userAccountService.get({
         email,
       });
-      if (!user && user.registerGoogleCalendar) return false;
+      if (!user) {
+        return false;
+      }
+      await this.unregisterCalendar(email);
       const channel = {
         id: randomUUID(),
         type: 'web_hook',
-        address: `${this.domainUrl}/api/v1/google/notifications/${email}`, // Endpoint nhận thông báo
+        address: `${domainUrl}/google/notifications/${email}`, // Endpoint nhận thông báo
       };
-      await this.calendar.events.watch({
+      const watch = await this.calendar.events.watch({
         oauth_token: accessToken,
         calendarId,
         requestBody: channel,
@@ -76,7 +73,8 @@ export class GoogleService {
         {
           googleAccessToken: accessToken,
           googleRefreshToken: refreshToken,
-          registerGoogleCalendar: true,
+          googleChannelId: watch.data.id,
+          resourceId: watch.data.resourceId,
         },
       );
 
@@ -84,6 +82,78 @@ export class GoogleService {
       return true;
     } catch (error) {
       throw new InternalServerErrorException('Server error');
+    }
+  }
+
+  async unregisterCalendar(email: string) {
+    try {
+      const user = await this._userAccountService.get({ email });
+      if (!user) {
+        throw new BadRequestException('User not found');
+      }
+
+      let { googleAccessToken, googleRefreshToken } = user;
+      if (!user.googleAccessToken || !user.googleRefreshToken) {
+        return null;
+      }
+      if (this.isTokenExpired(googleAccessToken)) {
+        googleAccessToken = await this.refreshAccessToken(googleRefreshToken);
+      }
+
+      await this.stopCalendarWebhook(
+        user.googleChannelId,
+        user.resourceId,
+        googleAccessToken,
+      );
+
+      const cancelResult = await this.agendaService.cancelAllUserMeetings(
+        user.id,
+      );
+      this.logger.log(
+        `✅ Đã hủy agenda jobs: ${cancelResult.canceledCount} jobs`,
+      );
+
+      await this._userAccountService.update(
+        { email },
+        {
+          googleAccessToken: null,
+          googleRefreshToken: null,
+          googleChannelId: null,
+          resourceId: null,
+        },
+      );
+
+      this.logger.log(`✅ Đã hủy đăng ký calendar cho email: ${email}`);
+
+      return {
+        success: true,
+        message: 'Đã hủy đăng ký calendar thành công',
+        canceledAgendaJobs: cancelResult.canceledCount,
+        canceledQueueJobs: cancelResult.canceledQueueJobs || 0,
+      };
+    } catch (error) {
+      this.logger.error(`❌ Lỗi khi hủy đăng ký calendar: ${error.message}`);
+      throw new InternalServerErrorException('Lỗi khi hủy đăng ký calendar');
+    }
+  }
+
+  private async stopCalendarWebhook(
+    channelId: string,
+    resourceId: string,
+    accessToken: string,
+  ) {
+    try {
+      await this.calendar.channels.stop({
+        oauth_token: accessToken,
+        requestBody: {
+          id: channelId,
+          resourceId: resourceId,
+        },
+      });
+
+      this.logger.log(`✅ Đã hủy webhook calendar`);
+    } catch (error) {
+      this.logger.warn(`⚠️ Không thể hủy webhook calendar: ${error.message}`);
     }
   }
 
@@ -103,24 +173,100 @@ export class GoogleService {
       }
       const events = await this.calendar.events.list({
         oauth_token: googleAccessToken,
-        calendarId,
+        calendarId: calendarId || 'primary',
         timeMin: new Date().toISOString(),
         singleEvents: true,
         orderBy: 'startTime',
       });
       const eventMeetings = events.data.items.filter((f) => f.hangoutLink);
+      await this.agendaService.cancelAllUserMeetings(id);
       if (eventMeetings.length) {
         await this.agendaService.scheduleMeetings(
           id,
-          eventMeetings as MeetingCalendarDto[],
+          eventMeetings.map((event) => ({
+            id: event.id,
+            summary: event.summary,
+            start: event.start,
+            end: event.end,
+            hangoutLink: event.hangoutLink,
+            organizer: event.organizer,
+          })) as MeetingCalendarDto[],
+        );
+        this.eventGateway.handlePingGoogleCalendar(id);
+      }
+      return eventMeetings;
+    } catch (error) {
+      this.logger.error('Lỗi khi lấy events:', error);
+      return false;
+    }
+  }
+
+  async getUserMeetings(email: string, today: boolean = false) {
+    try {
+      // 1. Kiểm tra user có đăng ký Google Calendar không
+      const user = await this._userAccountService.get({ email });
+      if (!user) {
+        return Results.error('User not found');
+      }
+
+      // 2. Kiểm tra có token Google không
+      if (!user.googleAccessToken || !user.googleRefreshToken) {
+        return Results.success({
+          registerGoogleCalendar: false,
+          message: 'Chưa đăng ký Google Calendar',
+        });
+      }
+
+      // 3. Lấy danh sách events từ Google Calendar
+      let { googleAccessToken, googleRefreshToken } = user;
+
+      // Refresh token nếu cần
+      if (this.isTokenExpired(googleAccessToken)) {
+        googleAccessToken = await this.refreshAccessToken(googleRefreshToken);
+        await this._userAccountService.update(
+          { email },
+          { googleAccessToken: googleAccessToken },
         );
       }
-      return true;
-    } catch (error) {
-      if (error.response?.status === 401) {
-        throw new Error('AccessToken hết hạn');
+
+      // Tính toán thời gian cho query
+      const now = new Date();
+      const timeMin = now.toISOString();
+
+      let timeMax;
+      if (today) {
+        const endOfDay = new Date(now);
+        endOfDay.setHours(23, 59, 59, 999);
+        timeMax = endOfDay.toISOString();
       }
-      throw error;
+
+      const events = await this.calendar.events.list({
+        oauth_token: googleAccessToken,
+        calendarId: 'primary',
+        timeMin: timeMin,
+        timeMax: timeMax,
+        singleEvents: true,
+        orderBy: 'startTime',
+      });
+
+      // 4. Lọc và format events có hangoutLink
+      const eventMeetings = events.data.items
+        .filter((event) => event.hangoutLink)
+        .map((event) => ({
+          platform: 'google',
+          summary: event.summary || 'Không có tiêu đề',
+          startTime: convertToUTC(event.start.dateTime, event.start.timeZone),
+          hangoutLink: event.hangoutLink,
+          eventId: event.id,
+        }));
+
+      return Results.success({
+        registerGoogleCalendar: true,
+        list: eventMeetings,
+        total: eventMeetings.length,
+      });
+    } catch (error) {
+      return Results.error(error);
     }
   }
 
@@ -176,20 +322,46 @@ export class GoogleService {
     return res;
   }
 
-  async exchangeCode(code: string) {
-    const url = 'https://zoom.us/oauth/token';
-    const response: AxiosResponse<any> = await firstValueFrom(
-      this.httpService.post(url, null, {
-        params: {
-          grant_type: 'authorization_code',
-          code,
-          redirect_uri: this.redirectUri,
-        },
-        auth: { username: this.clientId, password: this.clientSecret },
+  async exchangeCodeForToken(code: string) {
+    try {
+      const data = new URLSearchParams({
+        client_id: this.clientId,
+        client_secret: this.clientSecret,
+        code,
+        redirect_uri: 'http://localhost:8911/api/v1/google/redirect',
+        grant_type: 'authorization_code',
+      });
+
+      const response = await firstValueFrom(
+        this.httpService.post(
+          'https://oauth2.googleapis.com/token',
+          data.toString(),
+          {
+            headers: {
+              'Content-Type': 'application/x-www-form-urlencoded',
+            },
+          },
+        ),
+      );
+      console.log('response', response);
+
+      return response.data;
+    } catch (error) {
+      console.log('error', error);
+    }
+  }
+
+  async convertUrlGoogleAuth(
+    redirect_uri: string,
+    backend_redirect_uri: string,
+  ): Promise<string> {
+    const customState = encodeURIComponent(
+      JSON.stringify({
+        redirect_uri,
       }),
     );
-
-    return response.data; // access_token và refresh_token
+    const googleAuthUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${this.clientId}&redirect_uri=${backend_redirect_uri}&scope=email profile&response_type=code&state=${customState}`;
+    return googleAuthUrl;
   }
 
   async verifyGoogleAccessToken(accessToken: string) {
@@ -253,7 +425,7 @@ export class GoogleService {
         }
       }
       //typing name
-      await page.type('input[type="text"]', 'Zens bot', {
+      await page.type('input[type="text"]', 'AI meeting Bot', {
         delay: 100,
       });
 
@@ -270,17 +442,14 @@ export class GoogleService {
       );
       // push socket
 
-      await page.waitForSelector('div[jscontroller="h8UR3d"]', {
+      await page.waitForSelector('div[jscontroller="DM9D1"]', {
         timeout: 1000 * 60,
       });
 
-      await page.$eval(
-        'button[jsname="A5il2e"][aria-label="People"]',
-        async (button) => {
-          button.scrollIntoView();
-          button.click();
-        },
-      );
+      await page.$eval('div[jscontroller="DM9D1"]', async (button) => {
+        button.scrollIntoView();
+        button.click();
+      });
       await new Promise((resolve) => setTimeout(resolve, 1000));
 
       await page.$eval(
@@ -332,6 +501,7 @@ export class GoogleService {
       await new Promise((resolve) => setTimeout(resolve, 500));
       return meetingHostData;
     } catch (error) {
+      this.eventGateway.handleJoiningMeeting(meetingId, JOINING_STATUS.FAILED);
       throw new BadRequestException(error);
     }
   }
@@ -371,6 +541,13 @@ export class GoogleService {
     observer: MutationObserver,
     stopBot: () => void,
   ) {
+    page.on('console', (msg) => {
+      const text = msg.text();
+      if (text.startsWith('[meet-count]')) {
+        this.logger.log(text);
+      }
+    });
+
     await page.exposeFunction(
       'handlePingChat',
       (chatMessage: { sender: string; message: string }) => {
@@ -393,6 +570,8 @@ export class GoogleService {
     });
 
     return await page.evaluate(() => {
+      let lastBadgeCount: number | null = null;
+      let badgeObserver: MutationObserver | null = null;
       observer = new MutationObserver((mutationsList) => {
         let stop = false;
         for (const mutation of mutationsList) {
@@ -430,12 +609,6 @@ export class GoogleService {
           }
 
           if (mutation.type === 'characterData') {
-            const participantCount = mutation?.target?.textContent?.trim() || 0;
-            window.participantOnchange(Number(participantCount));
-            if (!participantCount) {
-              stop = true;
-              break;
-            }
             const participants = [];
             document
               .querySelectorAll('div.zSX24d[jsname="mu2b5d"]')
@@ -448,14 +621,6 @@ export class GoogleService {
                 }
               });
             window.handleListUsers(participants);
-          }
-          const peopleElement = document.querySelector(
-            'div[jscontroller="SKibOb"]',
-          );
-          if (!peopleElement) {
-            window.participantOnchange(0);
-            stop = true;
-            break;
           }
         }
       });
@@ -480,6 +645,92 @@ export class GoogleService {
       } else {
         console.error('People container not found');
       }
+
+      const parseBadgeCount = (badgeEl: HTMLElement) => {
+        const text = badgeEl.textContent || '';
+        const match = text.match(/\d+/);
+        if (!match) return;
+        const badgeCount = Number(match[0]);
+        if (!Number.isNaN(badgeCount) && badgeCount !== lastBadgeCount) {
+          lastBadgeCount = badgeCount;
+          console.log(`[meet-count] participants=${badgeCount}`);
+          window.participantOnchange(badgeCount);
+        }
+      };
+
+      const attachBadgeObserver = (badgeEl: HTMLElement) => {
+        parseBadgeCount(badgeEl);
+        if (badgeObserver) {
+          badgeObserver.disconnect();
+        }
+        badgeObserver = new MutationObserver(() => {
+          parseBadgeCount(badgeEl);
+        });
+        badgeObserver.observe(badgeEl, {
+          characterData: true,
+          childList: true,
+          subtree: true,
+        });
+      };
+
+      const initialBadge = document.querySelector(
+        'div[jscontroller="DM9D1"]',
+      ) as HTMLElement | null;
+      if (initialBadge) {
+        attachBadgeObserver(initialBadge);
+      } else {
+        const waitBadge = new MutationObserver(() => {
+          const badgeEl = document.querySelector(
+            'div[jscontroller="DM9D1"]',
+          ) as HTMLElement | null;
+          if (badgeEl) {
+            attachBadgeObserver(badgeEl);
+            waitBadge.disconnect();
+          }
+        });
+        waitBadge.observe(document.body, { childList: true, subtree: true });
+      }
+
+      const targetSelector = 'div[role="dialog"]';
+      const targetSelectorModal = 'div[jsname="GGAcbc"]';
+
+      const hidePopupIfExists = () => {
+        document.querySelectorAll(targetSelector).forEach((node) => {
+          (node as HTMLElement).style.display = 'none';
+        });
+        document.querySelectorAll(targetSelectorModal).forEach((node) => {
+          (node as HTMLElement).style.display = 'none';
+        });
+      };
+
+      hidePopupIfExists();
+
+      const observerPopup = new MutationObserver((mutationsList) => {
+        for (const mutation of mutationsList) {
+          if (mutation.type === 'attributes') {
+            hidePopupIfExists();
+            continue;
+          }
+          for (const node of mutation.addedNodes) {
+            if (node.nodeType === Node.ELEMENT_NODE) {
+              const element = node as HTMLElement;
+              if (
+                element.matches?.(targetSelector) ||
+                element.matches?.(targetSelectorModal)
+              ) {
+                element.style.display = 'none';
+              }
+            }
+          }
+        }
+      });
+
+      observerPopup.observe(document.body, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: ['style', 'class', 'aria-hidden'],
+      });
     });
   }
 }

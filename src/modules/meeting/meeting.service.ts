@@ -56,8 +56,8 @@ export class MeetingService {
       [
         {
           path: 'translationAI',
-          // select: ['isActive', 'startDate', 'endDate', 'deletedAt', 'user'],
           match: { deletedAt: null },
+          options: { sort: { _id: 1 } },
         },
       ],
     );
@@ -81,6 +81,14 @@ export class MeetingService {
       deletedAt: null,
       user: this._identityService._id,
     } as FilterQuery<Meeting>;
+
+    if (rest.keyword) {
+      conditions.$or = [
+        { organizer: { $regex: rest.keyword, $options: 'i' } },
+        { meetingCode: { $regex: rest.keyword, $options: 'i' } },
+        { title: { $regex: rest.keyword, $options: 'i' } },
+      ];
+    }
 
     const result = await this._meetingRepository.getPagination(conditions, {
       limit,
@@ -108,7 +116,6 @@ export class MeetingService {
         new mongoose.Types.ObjectId(meet.id),
         payload.transcripts,
       );
-      payload.translateStatus = TRANSLATE_STATUS.DONE;
       delete payload.transcripts;
     }
     return Results.success(
@@ -122,10 +129,7 @@ export class MeetingService {
     );
   }
 
-  async importMeeting(
-    file: Express.Multer.File,
-    language: string,
-  ): Promise<Result<Meeting>> {
+  async importMeeting(file: Express.Multer.File): Promise<Result<Meeting>> {
     try {
       const filePath = await this._fileService.uploadFile(file);
       const meeting = await this.create({
@@ -137,11 +141,8 @@ export class MeetingService {
         joiningStatus: JOINING_STATUS.IMPORT,
       });
       // todo using queue
-      const summary = SUMMARY_CORE.ALIBABA;
       await this.speechToTextQueue.add('speech-to-text', {
         meetingId: meeting.id,
-        summary,
-        language,
       });
       // todo using queue
 
@@ -198,5 +199,13 @@ export class MeetingService {
     } catch (error) {
       throw error;
     }
+  }
+  async getLive(): Promise<Result<Meeting[]>> {
+    const meetings = await this._meetingRepository.findAll({
+      user: this._identityService._id,
+      deletedAt: null,
+      recording: true,
+    });
+    return Results.success(meetings.data);
   }
 }

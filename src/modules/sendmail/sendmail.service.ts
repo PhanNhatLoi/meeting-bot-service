@@ -12,7 +12,6 @@ export class SendmailService {
     const transporter = createTransport({
       host: env.SMTP_HOST,
       port: Number(env.SMTP_PORT),
-      secure: false,
       auth: {
         user: env.SMTP_USER,
         pass: env.SMTP_PASSWORD,
@@ -20,7 +19,7 @@ export class SendmailService {
     });
 
     const mailOptions = {
-      from: env.SMTP_SENDER,
+      from: `"MeetLyzer" <${env.SMTP_SENDER}>`,
       to: sendMail.sendTo,
       subject: sendMail.subject,
       html: sendMail.content,
@@ -29,6 +28,7 @@ export class SendmailService {
       const res = await transporter.sendMail(mailOptions);
       return res.response;
     } catch (error) {
+      console.log(error);
       throw new BadRequestException(error);
     }
   }
