@@ -442,17 +442,14 @@ export class GoogleService {
       );
       // push socket
 
-      await page.waitForSelector('div[jscontroller="h8UR3d"]', {
+      await page.waitForSelector('div[jscontroller="DM9D1"]', {
         timeout: 1000 * 60,
       });
 
-      await page.$eval(
-        'button[jsname="A5il2e"][data-promo-anchor-id="GEUYHe"]',
-        async (button) => {
-          button.scrollIntoView();
-          button.click();
-        },
-      );
+      await page.$eval('div[jscontroller="DM9D1"]', async (button) => {
+        button.scrollIntoView();
+        button.click();
+      });
       await new Promise((resolve) => setTimeout(resolve, 1000));
 
       await page.$eval(
@@ -544,6 +541,13 @@ export class GoogleService {
     observer: MutationObserver,
     stopBot: () => void,
   ) {
+    page.on('console', (msg) => {
+      const text = msg.text();
+      if (text.startsWith('[meet-count]')) {
+        this.logger.log(text);
+      }
+    });
+
     await page.exposeFunction(
       'handlePingChat',
       (chatMessage: { sender: string; message: string }) => {
@@ -566,6 +570,8 @@ export class GoogleService {
     });
 
     return await page.evaluate(() => {
+      let lastBadgeCount: number | null = null;
+      let badgeObserver: MutationObserver | null = null;
       observer = new MutationObserver((mutationsList) => {
         let stop = false;
         for (const mutation of mutationsList) {
@@ -603,12 +609,6 @@ export class GoogleService {
           }
 
           if (mutation.type === 'characterData') {
-            const participantCount = mutation?.target?.textContent?.trim() || 0;
-            window.participantOnchange(Number(participantCount));
-            if (!participantCount) {
-              stop = true;
-              break;
-            }
             const participants = [];
             document
               .querySelectorAll('div.zSX24d[jsname="mu2b5d"]')
@@ -621,14 +621,6 @@ export class GoogleService {
                 }
               });
             window.handleListUsers(participants);
-          }
-          const peopleElement = document.querySelector(
-            'div[jscontroller="SKibOb"]',
-          );
-          if (!peopleElement) {
-            window.participantOnchange(0);
-            stop = true;
-            break;
           }
         }
       });
@@ -654,8 +646,53 @@ export class GoogleService {
         console.error('People container not found');
       }
 
-      const targetSelector = 'div.VfPpkd-P5QLlc[role="dialog"]';
-      const targetSelectorModal = 'div.VfPpkd-IE5DDf[jsname="GGAcbc"]';
+      const parseBadgeCount = (badgeEl: HTMLElement) => {
+        const text = badgeEl.textContent || '';
+        const match = text.match(/\d+/);
+        if (!match) return;
+        const badgeCount = Number(match[0]);
+        if (!Number.isNaN(badgeCount) && badgeCount !== lastBadgeCount) {
+          lastBadgeCount = badgeCount;
+          console.log(`[meet-count] participants=${badgeCount}`);
+          window.participantOnchange(badgeCount);
+        }
+      };
+
+      const attachBadgeObserver = (badgeEl: HTMLElement) => {
+        parseBadgeCount(badgeEl);
+        if (badgeObserver) {
+          badgeObserver.disconnect();
+        }
+        badgeObserver = new MutationObserver(() => {
+          parseBadgeCount(badgeEl);
+        });
+        badgeObserver.observe(badgeEl, {
+          characterData: true,
+          childList: true,
+          subtree: true,
+        });
+      };
+
+      const initialBadge = document.querySelector(
+        'div[jscontroller="DM9D1"]',
+      ) as HTMLElement | null;
+      if (initialBadge) {
+        attachBadgeObserver(initialBadge);
+      } else {
+        const waitBadge = new MutationObserver(() => {
+          const badgeEl = document.querySelector(
+            'div[jscontroller="DM9D1"]',
+          ) as HTMLElement | null;
+          if (badgeEl) {
+            attachBadgeObserver(badgeEl);
+            waitBadge.disconnect();
+          }
+        });
+        waitBadge.observe(document.body, { childList: true, subtree: true });
+      }
+
+      const targetSelector = 'div[role="dialog"]';
+      const targetSelectorModal = 'div[jsname="GGAcbc"]';
 
       const hidePopupIfExists = () => {
         const popup = document.querySelector(targetSelector);
