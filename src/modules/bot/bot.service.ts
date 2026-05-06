@@ -27,6 +27,7 @@ import { NAME_QUEUE } from 'src/shared/bull.config';
 import { Queue } from 'bullmq';
 import { EventsGateway } from '@modules/gateways/events.gateway';
 import * as ffmpeg from 'fluent-ffmpeg';
+import { PassThrough } from 'node:stream';
 
 @Injectable()
 export class BotService {
@@ -38,6 +39,7 @@ export class BotService {
       stream?: Transform;
       file?: fs.WriteStream;
       mp4Recorder?: ffmpeg.FfmpegCommand;
+      mp3Recorder?: ffmpeg.FfmpegCommand;
       messages?: { sender: string; time: number; message: string }[];
       transcripts?: Translation[];
       listUsers?: string[];
@@ -108,6 +110,7 @@ export class BotService {
         messages: [],
         transcripts: [],
         timeStartRecord: null,
+        mp3Recorder: null,
         mp4Recorder: null,
       };
 
@@ -120,7 +123,9 @@ export class BotService {
         return Date.now() - this.arrayClientValue[keyword].timeStartRecord;
       };
 
-      const fileName = new Date().getTime() + '.mp4';
+      const fileBaseName = new Date().getTime().toString();
+      const fileName = `${fileBaseName}.mp4`;
+      const audioFileName = `${fileBaseName}.mp3`;
 
       if (platform === PLATFORM.mst) {
         this.arrayClientValue[keyword].stream = await getStream(page as any, {
@@ -247,21 +252,34 @@ export class BotService {
         frameSize: 120, //fps
         streamConfig: { highWaterMarkMB: 25600 },
       });
+      const streamSource = this.arrayClientValue[keyword].stream;
+      const mp4Branch = new PassThrough();
+      const mp3Branch = new PassThrough();
+      const sttBranch = new PassThrough();
 
-      const outputFilePath = `./files/${fileName}`;
-      this.arrayClientValue[keyword].mp4Recorder = ffmpeg(
-        this.arrayClientValue[keyword].stream as any,
-      )
+      streamSource.pipe(mp4Branch);
+      streamSource.pipe(mp3Branch);
+      streamSource.pipe(sttBranch);
+
+      const outputMp4Path = `./files/${fileName}`;
+      this.arrayClientValue[keyword].mp4Recorder = ffmpeg(mp4Branch as any)
         .videoCodec('libx264')
         .audioCodec('aac')
         .outputOptions(['-preset', 'veryfast', '-movflags', '+faststart'])
-        .on('error', (err) => {
-          this.logger.error(`MP4 realtime recording error: ${err?.message}`);
-        })
-        .on('end', () => {
-          this.logger.log(`MP4 realtime recording finished: ${outputFilePath}`);
-        })
-        .save(outputFilePath);
+        .on('error', (err) =>
+          this.logger.error(`MP4 realtime recording error: ${err?.message}`),
+        )
+        .save(outputMp4Path);
+
+      const outputMp3Path = `./files/${audioFileName}`;
+      this.arrayClientValue[keyword].mp3Recorder = ffmpeg(mp3Branch as any)
+        .noVideo()
+        .audioCodec('libmp3lame')
+        .audioBitrate('128k')
+        .on('error', (err) =>
+          this.logger.error(`MP3 realtime recording error: ${err?.message}`),
+        )
+        .save(outputMp3Path);
 
       this.arrayClientValue[keyword].file = null;
       this.arrayClientValue[keyword].timeStartRecord = Date.now();
@@ -274,7 +292,7 @@ export class BotService {
         setTranscript: (val: Translation) => {
           this.arrayClientValue?.[keyword]?.transcripts?.push(val);
         },
-        stream: this.arrayClientValue[keyword]?.stream,
+        stream: sttBranch as any,
       });
 
       const result = await this._meetingService.updateMeeting(
@@ -379,6 +397,9 @@ export class BotService {
         this.arrayClientValue[
           `${this._identityService.id}_${meetingData.id}`
         ].file?.close();
+        this.arrayClientValue[
+          `${this._identityService.id}_${meetingData.id}`
+        ].mp3Recorder?.kill('SIGTERM');
         this.arrayClientValue[
           `${this._identityService.id}_${meetingData.id}`
         ].mp4Recorder?.kill('SIGTERM');
