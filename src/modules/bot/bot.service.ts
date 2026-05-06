@@ -26,6 +26,7 @@ import { InjectQueue } from '@nestjs/bullmq';
 import { NAME_QUEUE } from 'src/shared/bull.config';
 import { Queue } from 'bullmq';
 import { EventsGateway } from '@modules/gateways/events.gateway';
+import * as ffmpeg from 'fluent-ffmpeg';
 
 @Injectable()
 export class BotService {
@@ -36,6 +37,7 @@ export class BotService {
       page?: any;
       stream?: Transform;
       file?: fs.WriteStream;
+      mp4Recorder?: ffmpeg.FfmpegCommand;
       messages?: { sender: string; time: number; message: string }[];
       transcripts?: Translation[];
       listUsers?: string[];
@@ -106,6 +108,7 @@ export class BotService {
         messages: [],
         transcripts: [],
         timeStartRecord: null,
+        mp4Recorder: null,
       };
 
       const { browser, page } = await this.initBrowser(platform);
@@ -117,8 +120,7 @@ export class BotService {
         return Date.now() - this.arrayClientValue[keyword].timeStartRecord;
       };
 
-      const fileName = new Date().getTime() + '.webm';
-      const file = fs.createWriteStream(`./files/${fileName}`);
+      const fileName = new Date().getTime() + '.mp4';
 
       if (platform === PLATFORM.mst) {
         this.arrayClientValue[keyword].stream = await getStream(page as any, {
@@ -245,9 +247,23 @@ export class BotService {
         frameSize: 120, //fps
         streamConfig: { highWaterMarkMB: 25600 },
       });
-      this.arrayClientValue[keyword].stream.pipe(file);
 
-      this.arrayClientValue[keyword].file = file;
+      const outputFilePath = `./files/${fileName}`;
+      this.arrayClientValue[keyword].mp4Recorder = ffmpeg(
+        this.arrayClientValue[keyword].stream as any,
+      )
+        .videoCodec('libx264')
+        .audioCodec('aac')
+        .outputOptions(['-preset', 'veryfast', '-movflags', '+faststart'])
+        .on('error', (err) => {
+          this.logger.error(`MP4 realtime recording error: ${err?.message}`);
+        })
+        .on('end', () => {
+          this.logger.log(`MP4 realtime recording finished: ${outputFilePath}`);
+        })
+        .save(outputFilePath);
+
+      this.arrayClientValue[keyword].file = null;
       this.arrayClientValue[keyword].timeStartRecord = Date.now();
 
       this._aiService.speechToTextRealtime({
@@ -363,6 +379,9 @@ export class BotService {
         this.arrayClientValue[
           `${this._identityService.id}_${meetingData.id}`
         ].file?.close();
+        this.arrayClientValue[
+          `${this._identityService.id}_${meetingData.id}`
+        ].mp4Recorder?.kill('SIGTERM');
         this.arrayClientValue[
           `${this._identityService.id}_${meetingData.id}`
         ].observer?.disconnect();
