@@ -31,8 +31,7 @@ import { v1 as speech } from '@google-cloud/speech';
 import { Translation } from '@database/entities/translation.entity';
 import { ISegment } from './interfaces/segment';
 import { google } from '@google-cloud/speech/build/protos/protos';
-import { PassThrough } from 'stream';
-import internal, { Writable } from 'stream';
+import { PassThrough, Transform, Writable } from 'node:stream';
 import { NAME_QUEUE } from 'src/shared/bull.config';
 const testFlag = false;
 
@@ -580,7 +579,7 @@ export class AiService {
     listUsers: string[];
     meeting: Meeting;
     setTranscript: (trans: Translation) => void;
-    stream: internal.Transform;
+    stream: Transform;
     timeStartRecord: number;
   }) {
     const audioInputStreamTransform = new Writable({

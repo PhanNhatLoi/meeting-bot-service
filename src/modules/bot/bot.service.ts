@@ -2,7 +2,7 @@ import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { launch, getStream } from 'puppeteer-stream';
 import { executablePath } from 'puppeteer';
 import * as fs from 'fs';
-import internal from 'stream';
+import { Transform } from 'node:stream';
 import { Results } from 'src/base/response/result-builder';
 import { GoogleService } from '@modules/google/google.service';
 import {
@@ -34,7 +34,7 @@ export class BotService {
     [x: string]: {
       browser?: any;
       page?: any;
-      stream?: internal.Transform;
+      stream?: Transform;
       file?: fs.WriteStream;
       messages?: { sender: string; time: number; message: string }[];
       transcripts?: Translation[];
