@@ -2,7 +2,7 @@ import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { launch, getStream } from 'puppeteer-stream';
 import { executablePath } from 'puppeteer';
 import * as fs from 'fs';
-import internal from 'stream';
+import { Transform } from 'node:stream';
 import { Results } from 'src/base/response/result-builder';
 import { GoogleService } from '@modules/google/google.service';
 import {
@@ -34,7 +34,7 @@ export class BotService {
     [x: string]: {
       browser?: any;
       page?: any;
-      stream?: internal.Transform;
+      stream?: Transform;
       file?: fs.WriteStream;
       messages?: { sender: string; time: number; message: string }[];
       transcripts?: Translation[];
@@ -250,16 +250,16 @@ export class BotService {
       this.arrayClientValue[keyword].file = file;
       this.arrayClientValue[keyword].timeStartRecord = Date.now();
 
-      // this._aiService.speechToTextRealtime({
-      //   timeStartRecord: this.arrayClientValue[keyword]?.timeStartRecord,
-      //   languageCode,
-      //   listUsers: this.arrayClientValue[keyword]?.listUsers,
-      //   meeting,
-      //   setTranscript: (val: Translation) => {
-      //     this.arrayClientValue?.[keyword]?.transcripts?.push(val);
-      //   },
-      //   stream: this.arrayClientValue[keyword]?.stream,
-      // });
+      this._aiService.speechToTextRealtime({
+        timeStartRecord: this.arrayClientValue[keyword]?.timeStartRecord,
+        languageCode,
+        listUsers: this.arrayClientValue[keyword]?.listUsers,
+        meeting,
+        setTranscript: (val: Translation) => {
+          this.arrayClientValue?.[keyword]?.transcripts?.push(val);
+        },
+        stream: this.arrayClientValue[keyword]?.stream,
+      });
 
       const result = await this._meetingService.updateMeeting(
         { _id: new mongoose.Types.ObjectId(meeting.id) },

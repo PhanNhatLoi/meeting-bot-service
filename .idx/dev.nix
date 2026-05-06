@@ -2,7 +2,7 @@
 
 {
   packages = [
-    # ===== Existing packages (giữ nguyên) =====
+    # ===== Existing packages (giữ nguyên) ===
     pkgs.yarn
     pkgs.xvfb-run
     pkgs.libglibutil
@@ -50,8 +50,10 @@
   env = {
     NODE_ENV = "development";
 
-    # Quan trọng nhất
+    # Trỏ Puppeteer tới Chromium do Nix cung cấp
     CHROME_BIN = "${pkgs.chromium}/bin/chromium";
+    PUPPETEER_EXECUTABLE_PATH = "${pkgs.chromium}/bin/chromium";
+    GOOGLE_CHROME_BIN = "${pkgs.chromium}/bin/chromium";
     PUPPETEER_SKIP_DOWNLOAD = "true";
   };
 }
