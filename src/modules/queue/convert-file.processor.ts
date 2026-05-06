@@ -35,6 +35,13 @@ export class ConvertFileProcessor extends WorkerHost {
         );
         console.log(`File converted successfully for meeting: ${meetingId}`);
       } else {
+        await this.aiService.updateAndSentEvent(
+          new mongoose.Types.ObjectId(meetingId),
+          {
+            status: TRANSLATE_STATUS.DONE,
+            recordUri,
+          },
+        );
         console.log(`No conversion needed for meeting: ${meetingId}`);
       }
     } catch (error) {

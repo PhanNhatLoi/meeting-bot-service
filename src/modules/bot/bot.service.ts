@@ -434,10 +434,25 @@ export class BotService {
               translateStatus: TRANSLATE_STATUS.PROCESSING,
             },
           );
-          await this._convertFileQueue.add(NAME_QUEUE.CONVERT_FILE, {
-            meetingId: meetingData.id,
-            recordUri: meeting.recordUri,
-          });
+          const currentRecordUri = meeting.recordUri || '';
+          if (currentRecordUri.toLowerCase().endsWith('.mp4')) {
+            await this._meetingService.updateMeeting(
+              { _id: new mongoose.Types.ObjectId(meetingData.id) },
+              {
+                translateStatus: TRANSLATE_STATUS.DONE,
+              },
+            );
+            this._eventGateway.handlePingTranslation(
+              this._identityService.id,
+              meetingData.id,
+              { status: TRANSLATE_STATUS.DONE },
+            );
+          } else {
+            await this._convertFileQueue.add(NAME_QUEUE.CONVERT_FILE, {
+              meetingId: meetingData.id,
+              recordUri: currentRecordUri,
+            });
+          }
         }
       }
     } catch (error) {
