@@ -40,6 +40,9 @@ export class BotService {
       file?: fs.WriteStream;
       mp4Recorder?: ffmpeg.FfmpegCommand;
       mp3Recorder?: ffmpeg.FfmpegCommand;
+      mp4Branch?: PassThrough;
+      mp3Branch?: PassThrough;
+      sttBranch?: PassThrough;
       messages?: { sender: string; time: number; message: string }[];
       transcripts?: Translation[];
       listUsers?: string[];
@@ -112,6 +115,9 @@ export class BotService {
         timeStartRecord: null,
         mp3Recorder: null,
         mp4Recorder: null,
+        mp3Branch: null,
+        mp4Branch: null,
+        sttBranch: null,
       };
 
       const { browser, page } = await this.initBrowser(platform);
@@ -256,6 +262,9 @@ export class BotService {
       const mp4Branch = new PassThrough();
       const mp3Branch = new PassThrough();
       const sttBranch = new PassThrough();
+      this.arrayClientValue[keyword].mp4Branch = mp4Branch;
+      this.arrayClientValue[keyword].mp3Branch = mp3Branch;
+      this.arrayClientValue[keyword].sttBranch = sttBranch;
 
       streamSource.pipe(mp4Branch);
       streamSource.pipe(mp3Branch);
@@ -388,24 +397,25 @@ export class BotService {
       if (
         this.arrayClientValue[`${this._identityService.id}_${meetingData.id}`]
       ) {
-        this.arrayClientValue[
-          `${this._identityService.id}_${meetingData.id}`
-        ].browser?.close();
-        this.arrayClientValue[
-          `${this._identityService.id}_${meetingData.id}`
-        ].stream?.destroy();
-        this.arrayClientValue[
-          `${this._identityService.id}_${meetingData.id}`
-        ].file?.close();
-        this.arrayClientValue[
-          `${this._identityService.id}_${meetingData.id}`
-        ].mp3Recorder?.kill('SIGTERM');
-        this.arrayClientValue[
-          `${this._identityService.id}_${meetingData.id}`
-        ].mp4Recorder?.kill('SIGTERM');
-        this.arrayClientValue[
-          `${this._identityService.id}_${meetingData.id}`
-        ].observer?.disconnect();
+        const current =
+          this.arrayClientValue[`${this._identityService.id}_${meetingData.id}`];
+        // End branches first so FFmpeg can flush trailer for MP4.
+        current.stream?.unpipe(current.mp4Branch);
+        current.stream?.unpipe(current.mp3Branch);
+        current.stream?.unpipe(current.sttBranch);
+        current.mp4Branch?.end();
+        current.mp3Branch?.end();
+        current.sttBranch?.end();
+        current.stream?.destroy();
+
+        await Promise.allSettled([
+          this.waitRecorderFinish(current.mp3Recorder, 'mp3'),
+          this.waitRecorderFinish(current.mp4Recorder, 'mp4'),
+        ]);
+
+        current.browser?.close();
+        current.file?.close();
+        current.observer?.disconnect();
         delete this.arrayClientValue[
           `${this._identityService.id}_${meetingData.id}`
         ];
@@ -433,6 +443,39 @@ export class BotService {
     } catch (error) {
       this.logger.error('Error in handleKillBrowser:', error);
     }
+  }
+
+  private async waitRecorderFinish(
+    recorder?: ffmpeg.FfmpegCommand,
+    name = 'recorder',
+  ): Promise<void> {
+    if (!recorder) return;
+    await new Promise<void>((resolve) => {
+      let settled = false;
+      const done = () => {
+        if (settled) return;
+        settled = true;
+        resolve();
+      };
+      const timeout = setTimeout(() => {
+        this.logger.warn(`Force stop ${name} recorder due to timeout`);
+        try {
+          recorder.kill('SIGTERM');
+        } catch (error) {
+          this.logger.warn(`Failed to kill ${name} recorder`);
+        }
+        done();
+      }, 8000);
+
+      recorder.once('end', () => {
+        clearTimeout(timeout);
+        done();
+      });
+      recorder.once('error', () => {
+        clearTimeout(timeout);
+        done();
+      });
+    });
   }
 
   async handleGetInfo(
