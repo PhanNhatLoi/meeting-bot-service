@@ -103,7 +103,14 @@ export class AiService {
     if (!meeting) {
       throw new BadRequestException('Audio file is required');
     }
-    const audioFilePath = await this.convertWebmToMp3(meeting.recordUri);
+    const mp3FromRealtimePath = path.join(
+      process.cwd(),
+      'files',
+      (meeting.recordUri || '').replace(/\.mp4$/i, '.mp3'),
+    );
+    const audioFilePath = fs.existsSync(mp3FromRealtimePath)
+      ? mp3FromRealtimePath
+      : await this.convertWebmToMp3(meeting.recordUri);
     await this.updateAndSentEvent(meetingIdObject, {
       transcripts: [],
       status: TRANSLATE_STATUS.PROCESSING,
