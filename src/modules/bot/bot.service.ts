@@ -3,7 +3,6 @@ import { launch, getStream } from 'puppeteer-stream';
 import { executablePath } from 'puppeteer';
 import * as fs from 'fs';
 import internal from 'stream';
-import * as ffmpeg from 'fluent-ffmpeg';
 import { Results } from 'src/base/response/result-builder';
 import { GoogleService } from '@modules/google/google.service';
 import {
@@ -37,8 +36,6 @@ export class BotService {
       page?: any;
       stream?: internal.Transform;
       file?: fs.WriteStream;
-      recordInput?: internal.PassThrough;
-      recordProcess?: ffmpeg.FfmpegCommand;
       messages?: { sender: string; time: number; message: string }[];
       transcripts?: Translation[];
       listUsers?: string[];
@@ -120,8 +117,17 @@ export class BotService {
         return Date.now() - this.arrayClientValue[keyword].timeStartRecord;
       };
 
-      const mp4FileName = `${new Date().getTime()}.mp4`;
-      const outputPath = `./files/${mp4FileName}`;
+      const fileName = new Date().getTime() + '.webm';
+      const file = fs.createWriteStream(`./files/${fileName}`);
+
+      if (platform === PLATFORM.mst) {
+        this.arrayClientValue[keyword].stream = await getStream(page as any, {
+          audio: true,
+          video: true,
+          frameSize: 120, //fps
+          streamConfig: { highWaterMarkMB: 25600 },
+        });
+      }
 
       let meetData;
       //get realtime chat
@@ -239,50 +245,27 @@ export class BotService {
         frameSize: 120, //fps
         streamConfig: { highWaterMarkMB: 25600 },
       });
-      const recordInput = new internal.PassThrough();
-      this.arrayClientValue[keyword].recordInput = recordInput;
-      this.arrayClientValue[keyword].stream.pipe(recordInput);
+      this.arrayClientValue[keyword].stream.pipe(file);
 
-      const recordProcess = ffmpeg(recordInput)
-        .inputFormat('webm')
-        .outputOptions([
-          '-c:v',
-          'libx264',
-          '-preset',
-          'veryfast',
-          '-crf',
-          '23',
-          '-c:a',
-          'aac',
-          '-b:a',
-          '128k',
-          '-movflags',
-          '+faststart',
-        ])
-        .save(outputPath)
-        .on('error', (err) => {
-          this.logger.error(`Record mp4 failed for meeting ${meeting.id}`, err);
-        });
-
-      this.arrayClientValue[keyword].recordProcess = recordProcess;
+      this.arrayClientValue[keyword].file = file;
       this.arrayClientValue[keyword].timeStartRecord = Date.now();
 
-      this._aiService.speechToTextRealtime({
-        timeStartRecord: this.arrayClientValue[keyword]?.timeStartRecord,
-        languageCode,
-        listUsers: this.arrayClientValue[keyword]?.listUsers,
-        meeting,
-        setTranscript: (val: Translation) => {
-          this.arrayClientValue?.[keyword]?.transcripts?.push(val);
-        },
-        stream: this.arrayClientValue[keyword]?.stream,
-      });
+      // this._aiService.speechToTextRealtime({
+      //   timeStartRecord: this.arrayClientValue[keyword]?.timeStartRecord,
+      //   languageCode,
+      //   listUsers: this.arrayClientValue[keyword]?.listUsers,
+      //   meeting,
+      //   setTranscript: (val: Translation) => {
+      //     this.arrayClientValue?.[keyword]?.transcripts?.push(val);
+      //   },
+      //   stream: this.arrayClientValue[keyword]?.stream,
+      // });
 
       const result = await this._meetingService.updateMeeting(
         { _id: new mongoose.Types.ObjectId(meeting.id) },
         {
           recording: true,
-          recordUri: mp4FileName,
+          recordUri: fileName,
           organizer: meetData?.organizer || '',
         },
       );
@@ -377,12 +360,6 @@ export class BotService {
         this.arrayClientValue[
           `${this._identityService.id}_${meetingData.id}`
         ].stream?.destroy();
-        this.arrayClientValue[
-          `${this._identityService.id}_${meetingData.id}`
-        ].recordInput?.end();
-        this.arrayClientValue[
-          `${this._identityService.id}_${meetingData.id}`
-        ].recordProcess?.kill('SIGINT');
         this.arrayClientValue[
           `${this._identityService.id}_${meetingData.id}`
         ].file?.close();
