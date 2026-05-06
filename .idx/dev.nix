@@ -2,7 +2,7 @@
 
 {
   packages = [
-    # ===== Existing packages (giữ nguyên) =====
+    # ===== Existing packages (giữ nguyên) ===
     pkgs.yarn
     pkgs.xvfb-run
     pkgs.libglibutil
