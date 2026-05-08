@@ -26,8 +26,6 @@ import { InjectQueue } from '@nestjs/bullmq';
 import { NAME_QUEUE } from 'src/shared/bull.config';
 import { Queue } from 'bullmq';
 import { EventsGateway } from '@modules/gateways/events.gateway';
-import * as ffmpeg from 'fluent-ffmpeg';
-import { PassThrough } from 'node:stream';
 
 @Injectable()
 export class BotService {
@@ -38,11 +36,6 @@ export class BotService {
       page?: any;
       stream?: Transform;
       file?: fs.WriteStream;
-      mp4Recorder?: ffmpeg.FfmpegCommand;
-      mp3Recorder?: ffmpeg.FfmpegCommand;
-      mp4Branch?: PassThrough;
-      mp3Branch?: PassThrough;
-      sttBranch?: PassThrough;
       messages?: { sender: string; time: number; message: string }[];
       transcripts?: Translation[];
       listUsers?: string[];
@@ -113,11 +106,6 @@ export class BotService {
         messages: [],
         transcripts: [],
         timeStartRecord: null,
-        mp3Recorder: null,
-        mp4Recorder: null,
-        mp3Branch: null,
-        mp4Branch: null,
-        sttBranch: null,
       };
 
       const { browser, page } = await this.initBrowser(platform);
@@ -129,9 +117,8 @@ export class BotService {
         return Date.now() - this.arrayClientValue[keyword].timeStartRecord;
       };
 
-      const fileBaseName = new Date().getTime().toString();
-      const fileName = `${fileBaseName}.mp4`;
-      const audioFileName = `${fileBaseName}.mp3`;
+      const fileName = new Date().getTime() + '.webm';
+      const file = fs.createWriteStream(`./files/${fileName}`);
 
       if (platform === PLATFORM.mst) {
         this.arrayClientValue[keyword].stream = await getStream(page as any, {
@@ -258,39 +245,9 @@ export class BotService {
         frameSize: 120, //fps
         streamConfig: { highWaterMarkMB: 25600 },
       });
-      const streamSource = this.arrayClientValue[keyword].stream;
-      const mp4Branch = new PassThrough();
-      const mp3Branch = new PassThrough();
-      const sttBranch = new PassThrough();
-      this.arrayClientValue[keyword].mp4Branch = mp4Branch;
-      this.arrayClientValue[keyword].mp3Branch = mp3Branch;
-      this.arrayClientValue[keyword].sttBranch = sttBranch;
+      this.arrayClientValue[keyword].stream.pipe(file);
 
-      streamSource.pipe(mp4Branch);
-      streamSource.pipe(mp3Branch);
-      streamSource.pipe(sttBranch);
-
-      const outputMp4Path = `./files/${fileName}`;
-      this.arrayClientValue[keyword].mp4Recorder = ffmpeg(mp4Branch as any)
-        .videoCodec('libx264')
-        .audioCodec('aac')
-        .outputOptions(['-preset', 'veryfast', '-movflags', '+faststart'])
-        .on('error', (err) =>
-          this.logger.error(`MP4 realtime recording error: ${err?.message}`),
-        )
-        .save(outputMp4Path);
-
-      const outputMp3Path = `./files/${audioFileName}`;
-      this.arrayClientValue[keyword].mp3Recorder = ffmpeg(mp3Branch as any)
-        .noVideo()
-        .audioCodec('libmp3lame')
-        .audioBitrate('128k')
-        .on('error', (err) =>
-          this.logger.error(`MP3 realtime recording error: ${err?.message}`),
-        )
-        .save(outputMp3Path);
-
-      this.arrayClientValue[keyword].file = null;
+      this.arrayClientValue[keyword].file = file;
       this.arrayClientValue[keyword].timeStartRecord = Date.now();
 
       this._aiService.speechToTextRealtime({
@@ -301,7 +258,7 @@ export class BotService {
         setTranscript: (val: Translation) => {
           this.arrayClientValue?.[keyword]?.transcripts?.push(val);
         },
-        stream: sttBranch as any,
+        stream: this.arrayClientValue[keyword]?.stream,
       });
 
       const result = await this._meetingService.updateMeeting(
@@ -397,25 +354,18 @@ export class BotService {
       if (
         this.arrayClientValue[`${this._identityService.id}_${meetingData.id}`]
       ) {
-        const current =
-          this.arrayClientValue[`${this._identityService.id}_${meetingData.id}`];
-        // End branches first so FFmpeg can flush trailer for MP4.
-        current.stream?.unpipe(current.mp4Branch);
-        current.stream?.unpipe(current.mp3Branch);
-        current.stream?.unpipe(current.sttBranch);
-        current.mp4Branch?.end();
-        current.mp3Branch?.end();
-        current.sttBranch?.end();
-        current.stream?.destroy();
-
-        await Promise.allSettled([
-          this.waitRecorderFinish(current.mp3Recorder, 'mp3'),
-          this.waitRecorderFinish(current.mp4Recorder, 'mp4'),
-        ]);
-
-        current.browser?.close();
-        current.file?.close();
-        current.observer?.disconnect();
+        this.arrayClientValue[
+          `${this._identityService.id}_${meetingData.id}`
+        ].browser?.close();
+        this.arrayClientValue[
+          `${this._identityService.id}_${meetingData.id}`
+        ].stream?.destroy();
+        this.arrayClientValue[
+          `${this._identityService.id}_${meetingData.id}`
+        ].file?.close();
+        this.arrayClientValue[
+          `${this._identityService.id}_${meetingData.id}`
+        ].observer?.disconnect();
         delete this.arrayClientValue[
           `${this._identityService.id}_${meetingData.id}`
         ];
@@ -434,63 +384,15 @@ export class BotService {
               translateStatus: TRANSLATE_STATUS.PROCESSING,
             },
           );
-          const currentRecordUri = meeting.recordUri || '';
-          if (currentRecordUri.toLowerCase().endsWith('.mp4')) {
-            await this._meetingService.updateMeeting(
-              { _id: new mongoose.Types.ObjectId(meetingData.id) },
-              {
-                translateStatus: TRANSLATE_STATUS.DONE,
-              },
-            );
-            this._eventGateway.handlePingTranslation(
-              this._identityService.id,
-              meetingData.id,
-              { status: TRANSLATE_STATUS.DONE },
-            );
-          } else {
-            await this._convertFileQueue.add(NAME_QUEUE.CONVERT_FILE, {
-              meetingId: meetingData.id,
-              recordUri: currentRecordUri,
-            });
-          }
+          await this._convertFileQueue.add(NAME_QUEUE.CONVERT_FILE, {
+            meetingId: meetingData.id,
+            recordUri: meeting.recordUri,
+          });
         }
       }
     } catch (error) {
       this.logger.error('Error in handleKillBrowser:', error);
     }
-  }
-
-  private async waitRecorderFinish(
-    recorder?: ffmpeg.FfmpegCommand,
-    name = 'recorder',
-  ): Promise<void> {
-    if (!recorder) return;
-    await new Promise<void>((resolve) => {
-      let settled = false;
-      const done = () => {
-        if (settled) return;
-        settled = true;
-        resolve();
-      };
-      const timeout = setTimeout(() => {
-        this.logger.warn(`Force stop ${name} recorder due to timeout`);
-        try {
-          recorder.kill('SIGTERM');
-        } catch (error) {
-          this.logger.warn(`Failed to kill ${name} recorder`);
-        }
-        done();
-      }, 8000);
-
-      recorder.once('end', () => {
-        clearTimeout(timeout);
-        done();
-      });
-      recorder.once('error', () => {
-        clearTimeout(timeout);
-        done();
-      });
-    });
   }
 
   async handleGetInfo(
